@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Storyboard Maker</title>
+    <meta name="description" content="Build storyboards from your images, add shot details and arrows, export PDFs and collect client feedback." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234f46e5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2' y='4' width='9' height='7' rx='1.5'/%3E%3Crect x='13' y='4' width='9' height='7' rx='1.5'/%3E%3Crect x='2' y='13' width='9' height='7' rx='1.5'/%3E%3Cpath d='M14 15h7M14 18h5'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+  <body class="app">
+    <header class="topbar">
+      <div class="brand" data-icon="logo" data-icon-size="22"><span class="brand-name">Storyboard</span></div>
+      <input id="project-title" class="title-input" type="text" placeholder="Untitled storyboard" aria-label="Storyboard title" maxlength="140" />
+      <span id="save-status" class="save-status" aria-live="polite"></span>
+      <div class="topbar-spacer"></div>
+      <label class="aspect-control">
+        <span class="aspect-label">Aspect</span>
+        <select id="aspect-select" class="input input-sm" aria-label="Aspect ratio for all frames"></select>
+      </label>
+      <div class="btn-group">
+        <button id="undo-btn" type="button" class="icon-btn" title="Undo (Ctrl+Z)" aria-label="Undo" data-icon="undo"></button>
+        <button id="redo-btn" type="button" class="icon-btn" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" data-icon="redo"></button>
+      </div>
+      <div class="menu">
+        <button id="file-btn" type="button" class="btn btn-ghost" aria-haspopup="true" aria-expanded="false" data-icon="file"><span class="hide-sm">File</span></button>
+        <div id="file-menu" class="menu-pop" role="menu" hidden>
+          <button type="button" role="menuitem" data-file="new">New storyboard</button>
+          <button type="button" role="menuitem" data-file="open">Open project…<kbd class="kbd" data-shortcut="O"></kbd></button>
+          <div class="menu-sep"></div>
+          <button type="button" role="menuitem" data-file="save">Save project<kbd class="kbd" data-shortcut="S"></kbd></button>
+          <button type="button" role="menuitem" data-file="saveas">Save project as…</button>
+          <div class="menu-sep"></div>
+          <p class="menu-note">Project files (.storyboard) contain your images, text and arrows. Use them to back up or move work between computers.</p>
+        </div>
+      </div>
+      <button id="feedback-btn" type="button" class="btn btn-ghost" data-icon="message"><span class="hide-sm">Feedback</span><span id="feedback-count" class="count-pill" hidden></span></button>
+      <button id="share-btn" type="button" class="btn btn-ghost" data-icon="link"><span class="hide-sm">Client link</span></button>
+      <button id="export-btn" type="button" class="btn btn-primary" data-icon="download"><span>Export PDF</span></button>
+    </header>
+
+    <div class="subbar">
+      <button id="add-images-btn" type="button" class="btn btn-soft" data-icon="plus"><span>Add images</span></button>
+      <button id="add-blank-btn" type="button" class="btn btn-ghost hide-sm">Add blank frame</button>
+      <button id="cover-btn" type="button" class="btn btn-ghost" data-icon="book"><span>Cover page</span></button>
+      <button id="fields-btn" type="button" class="btn btn-ghost" data-icon="list"><span>Fields</span></button>
+      <span id="frame-count" class="muted small"></span>
+      <span class="spacer"></span>
+      <label class="size-control hide-sm">
+        <span class="muted small">Card size</span>
+        <input id="card-size" type="range" min="180" max="520" step="10" aria-label="Card size" />
+      </label>
+    </div>
+
+    <div class="workspace">
+      <main id="board" class="board" aria-label="Storyboard frames">
+        <div class="loading">Loading your storyboard…</div>
+      </main>
+      <aside id="feedback-panel" class="feedback-panel" aria-label="Client feedback" hidden></aside>
+    </div>
+
+    <div id="drop-overlay" class="drop-overlay" hidden>
+      <div class="drop-overlay-inner"><span data-icon="image" data-icon-size="40"></span><strong>Drop images to add frames</strong><span>or drop a .storyboard project file to open it</span></div>
+    </div>
+    <div id="toasts" class="toasts" aria-live="polite"></div>
+
+    <!-- Frame editor -->
+    <dialog id="editor" class="editor" aria-label="Edit frame">
+      <div class="editor-head">
+        <div class="editor-nav">
+          <button id="ed-prev" type="button" class="icon-btn" title="Previous frame (Page Up)" aria-label="Previous frame" data-icon="left"></button>
+          <div class="editor-title"><span id="ed-num" class="num-badge num-badge-lg">1</span><span id="ed-of" class="muted"></span></div>
+          <button id="ed-next" type="button" class="icon-btn" title="Next frame (Page Down)" aria-label="Next frame" data-icon="right"></button>
+        </div>
+        <div class="editor-actions">
+          <button id="ed-move-earlier" type="button" class="btn btn-ghost btn-sm" title="Move this frame one position earlier"><span>Move earlier</span></button>
+          <button id="ed-move-later" type="button" class="btn btn-ghost btn-sm" title="Move this frame one position later"><span>Move later</span></button>
+          <button id="ed-replace" type="button" class="btn btn-ghost btn-sm" data-icon="image"><span>Replace image</span></button>
+          <button id="ed-duplicate" type="button" class="btn btn-ghost btn-sm" data-icon="copy"><span class="hide-sm">Duplicate</span></button>
+          <button id="ed-delete" type="button" class="btn btn-ghost btn-sm danger" data-icon="trash"><span class="hide-sm">Delete</span></button>
+          <button id="ed-done" type="button" class="btn btn-primary btn-sm">Done</button>
+        </div>
+      </div>
+      <div class="editor-body">
+        <section class="editor-visual">
+          <div class="tool-tabs" role="tablist" aria-label="Editing tool">
+            <button type="button" role="tab" data-tool="reframe" data-icon="crop" title="Reframe (R)"><span>Reframe</span></button>
+            <button type="button" role="tab" data-tool="arrows" data-icon="arrow" title="Arrows (A)"><span>Arrows</span></button>
+          </div>
+          <div id="ed-stage" class="stage">
+            <canvas id="ed-canvas"></canvas>
+            <div id="ed-hint" class="stage-hint"></div>
+          </div>
+          <div id="ed-reframe-panel" class="tool-panel">
+            <div class="ctl ctl-grow">
+              <span class="ctl-label">Zoom <output id="ed-zoom-label" class="muted"></output></span>
+              <input id="ed-zoom" type="range" min="0" max="1000" step="1" aria-label="Zoom" />
+            </div>
+            <div class="ctl ctl-row">
+              <button id="ed-fit" type="button" class="btn btn-ghost btn-sm" title="Show the whole image (letterboxed)">Fit</button>
+              <button id="ed-fill" type="button" class="btn btn-ghost btn-sm" title="Fill the frame">Fill</button>
+              <button id="ed-flip" type="button" class="btn btn-ghost btn-sm" data-icon="flip" aria-pressed="false" title="Flip horizontally"><span>Flip</span></button>
+              <button id="ed-reset" type="button" class="btn btn-ghost btn-sm" data-icon="reset" title="Reset framing"><span>Reset</span></button>
+            </div>
+          </div>
+          <div id="ed-arrow-panel" class="tool-panel" hidden>
+            <div class="ctl ctl-full"><span id="ed-arrow-scope" class="ctl-scope">Style for new arrows</span></div>
+            <div class="ctl">
+              <span class="ctl-label">Color</span>
+              <div id="ed-colors" class="swatches"></div>
+            </div>
+            <div class="ctl">
+              <span class="ctl-label">Thickness <output id="ed-width-label" class="muted"></output></span>
+              <input id="ed-width" type="range" min="1" max="30" step="1" aria-label="Thickness" />
+            </div>
+            <div class="ctl">
+              <span class="ctl-label">Arrowheads</span>
+              <div id="ed-heads" class="seg">
+                <button type="button" class="seg-btn" data-head="end" title="Arrowhead at the end" aria-label="Arrowhead at the end">→</button>
+                <button type="button" class="seg-btn" data-head="start" title="Arrowhead at the start" aria-label="Arrowhead at the start">←</button>
+                <button type="button" class="seg-btn" data-head="both" title="Arrowheads at both ends" aria-label="Arrowheads at both ends">↔</button>
+                <button type="button" class="seg-btn" data-head="none" title="No arrowheads" aria-label="No arrowheads">—</button>
+              </div>
+            </div>
+            <div class="ctl">
+              <span class="ctl-label">Line</span>
+              <div id="ed-dash" class="seg">
+                <button type="button" class="seg-btn" data-dash="0">Solid</button>
+                <button type="button" class="seg-btn" data-dash="1">Dashed</button>
+              </div>
+            </div>
+            <div class="ctl">
+              <span class="ctl-label">Curve</span>
+              <div class="ctl-row">
+                <input id="ed-curve" type="range" min="-100" max="100" step="1" aria-label="Curve" />
+                <button id="ed-straighten" type="button" class="btn btn-ghost btn-sm">Straight</button>
+              </div>
+            </div>
+            <label class="ctl ctl-check"><input id="ed-outline" type="checkbox" /> Outline</label>
+            <div class="ctl ctl-row">
+              <button id="ed-reverse" type="button" class="btn btn-ghost btn-sm" data-icon="swap" title="Reverse direction"><span>Reverse</span></button>
+              <button id="ed-arrow-delete" type="button" class="btn btn-ghost btn-sm danger" data-icon="trash"><span>Delete arrow</span></button>
+              <button id="ed-arrows-clear" type="button" class="btn btn-ghost btn-sm">Clear all</button>
+            </div>
+            <p class="ctl-help muted small">Drag the round handles to move the ends and the diamond to curve it. Hold Shift for straight 45° lines.</p>
+          </div>
+        </section>
+        <aside class="editor-fields">
+          <div class="editor-fields-head">
+            <h3>Details</h3>
+            <p class="muted small">Only filled-in fields appear on the board and in the PDF.</p>
+          </div>
+          <div id="ed-fields" class="form-stack"></div>
+          <button id="ed-manage-fields" type="button" class="link-btn">Add, rename or remove fields…</button>
+        </aside>
+      </div>
+    </dialog>
+
+    <!-- Cover page -->
+    <dialog id="cover-dialog" class="modal" aria-labelledby="cover-title-h">
+      <div class="modal-head"><h2 id="cover-title-h">Cover page</h2></div>
+      <div class="modal-body form-stack">
+        <div class="form-row"><label for="cv-title">Title</label><input id="cv-title" class="input" type="text" data-cover="title" placeholder="Untitled storyboard" maxlength="140" /></div>
+        <div class="form-grid">
+          <div class="form-row"><label for="cv-client">Client</label><input id="cv-client" class="input" type="text" data-cover="client" placeholder="e.g. Acme Coffee" /></div>
+          <div class="form-row"><label for="cv-company">Production company</label><input id="cv-company" class="input" type="text" data-cover="company" placeholder="e.g. Northlight Films" /></div>
+          <div class="form-row">
+            <label for="cv-date">Date</label>
+            <div class="input-with-btn"><input id="cv-date" class="input" type="text" data-cover="date" placeholder="e.g. October 1, 2026" /><button id="cover-today" type="button" class="btn btn-ghost btn-sm">Today</button></div>
+          </div>
+          <div class="form-row"><label for="cv-version">Version</label><input id="cv-version" class="input" type="text" data-cover="version" placeholder="e.g. v2 – Client review" /></div>
+        </div>
+        <div class="form-row"><label for="cv-desc">Description</label><textarea id="cv-desc" class="input" rows="4" data-cover="description" placeholder="A short synopsis, creative direction, or notes for the client."></textarea></div>
+        <div class="form-row">
+          <span class="label">Cover image or logo</span>
+          <div class="cover-image-row">
+            <div id="cover-image-preview" class="cover-image-preview"></div>
+            <div class="stack-sm">
+              <button id="cover-image-btn" type="button" class="btn btn-ghost btn-sm" data-icon="image"><span>Upload image or logo</span></button>
+              <button id="cover-image-remove" type="button" class="btn btn-ghost btn-sm danger" hidden>Remove</button>
+            </div>
+          </div>
+        </div>
+        <label class="check"><input type="checkbox" data-cover="include" /> Include the cover page in PDF exports and client links</label>
+      </div>
+      <div class="modal-foot"><button id="cover-done" type="button" class="btn btn-primary">Done</button></div>
+    </dialog>
+
+    <!-- Fields manager -->
+    <dialog id="fields-dialog" class="modal" aria-labelledby="fields-h">
+      <div class="modal-head">
+        <h2 id="fields-h">Frame fields</h2>
+        <p class="muted small">Every frame has these fields. Empty ones stay hidden on the board, in PDFs and on client links.</p>
+      </div>
+      <div class="modal-body">
+        <ul id="fields-list" class="fields-list"></ul>
+        <div class="row-gap">
+          <button id="fields-add" type="button" class="btn btn-soft btn-sm" data-icon="plus"><span>Add field</span></button>
+          <button id="fields-reset" type="button" class="btn btn-ghost btn-sm">Restore standard fields</button>
+        </div>
+      </div>
+      <div class="modal-foot"><button id="fields-done" type="button" class="btn btn-primary">Done</button></div>
+    </dialog>
+
+    <!-- PDF export -->
+    <dialog id="export-dialog" class="modal modal-wide" aria-labelledby="export-h">
+      <div class="modal-head"><h2 id="export-h">Export PDF</h2></div>
+      <div class="modal-body export-body">
+        <div class="export-options form-stack">
+          <div class="form-row">
+            <span class="label">Frames per page</span>
+            <div id="ex-perpage" class="seg seg-wide"></div>
+          </div>
+          <div class="form-row">
+            <label for="ex-size">Page size</label>
+            <select id="ex-size" class="input"></select>
+          </div>
+          <div class="form-row">
+            <span class="label">Orientation</span>
+            <div id="ex-orient" class="seg seg-wide">
+              <button type="button" class="seg-btn" data-orient="landscape">Landscape</button>
+              <button type="button" class="seg-btn" data-orient="portrait">Portrait</button>
+            </div>
+          </div>
+          <label class="check"><input id="ex-cover" type="checkbox" /> Include cover page</label>
+          <label class="check"><input id="ex-labels" type="checkbox" /> Show field labels</label>
+          <label class="check"><input id="ex-header" type="checkbox" /> Header and page numbers</label>
+          <p id="ex-summary" class="muted small"></p>
+        </div>
+        <div class="export-preview">
+          <div id="ex-preview-wrap" class="preview-wrap"><canvas id="ex-preview" aria-label="Page preview"></canvas></div>
+          <div class="pager">
+            <button id="ex-prev" type="button" class="icon-btn icon-btn-sm" aria-label="Previous page" data-icon="left"></button>
+            <span id="ex-page-label" class="muted small"></span>
+            <button id="ex-next" type="button" class="icon-btn icon-btn-sm" aria-label="Next page" data-icon="right"></button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <progress id="ex-progress" max="1" value="0" hidden></progress>
+        <span class="spacer"></span>
+        <button id="ex-cancel" type="button" class="btn btn-ghost">Cancel</button>
+        <button id="ex-download" type="button" class="btn btn-primary" data-icon="download"><span>Download PDF</span></button>
+      </div>
+    </dialog>
+
+    <!-- Client link -->
+    <dialog id="share-dialog" class="modal modal-wide" aria-labelledby="share-h">
+      <div class="modal-head">
+        <h2 id="share-h">Client review link</h2>
+        <p class="muted small">Clients open the link in any browser, type their name once, and leave comments and suggested edits. No account needed.</p>
+      </div>
+      <div id="share-body" class="modal-body"></div>
+      <div class="modal-foot" id="share-foot"></div>
+    </dialog>
+
+    <script src="js/vendor/jspdf.umd.min.js"></script>
+    <script src="js/vendor/Sortable.min.js"></script>
+    <script src="js/util.js"></script>
+    <script src="js/store.js"></script>
+    <script src="js/render.js"></script>
+    <script src="js/board.js"></script>
+    <script src="js/editor.js"></script>
+    <script src="js/cover.js"></script>
+    <script src="js/fields.js"></script>
+    <script src="js/pdf.js"></script>
+    <script src="js/rules.js"></script>
+    <script src="js/cloud.js"></script>
+    <script src="js/threads.js"></script>
+    <script src="js/share.js"></script>
+    <script src="js/feedback.js"></script>
+    <script src="js/app.js"></script>
+  </body>
+</html>

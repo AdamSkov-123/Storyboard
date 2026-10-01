@@ -1,0 +1,8 @@
+firebase.js is a bundle of the Firebase JavaScript SDK v12.19.0
+(packages: firebase/app, firebase/auth, firebase/firestore), built with esbuild:
+
+  npx esbuild entry.js --bundle --minify --format=iife --global-name=SBFirebase
+
+The Firebase JavaScript SDK is Copyright Google LLC and licensed under the
+Apache License, Version 2.0: https://www.apache.org/licenses/LICENSE-2.0
+The individual license notices are preserved at the end of firebase.js.

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Storyboard review</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234f46e5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2' y='4' width='9' height='7' rx='1.5'/%3E%3Crect x='13' y='4' width='9' height='7' rx='1.5'/%3E%3Crect x='2' y='13' width='9' height='7' rx='1.5'/%3E%3Cpath d='M14 15h7M14 18h5'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+  <body class="review">
+    <header class="rv-top">
+      <div class="brand" data-icon="logo" data-icon-size="22"></div>
+      <div class="rv-titles">
+        <h1 id="rv-title">Loading storyboard…</h1>
+        <div id="rv-sub" class="muted small"></div>
+      </div>
+      <span class="spacer"></span>
+      <button id="rv-name-btn" type="button" class="btn btn-ghost btn-sm" hidden></button>
+      <button id="rv-mode-btn" type="button" class="btn btn-ghost btn-sm" aria-pressed="true" data-icon="pin" title="When on, clicking the storyboard adds a comment"><span>Commenting on</span></button>
+      <button id="rv-panel-btn" type="button" class="btn btn-primary btn-sm" data-icon="message"><span>Comments</span><span id="rv-count" class="count-pill" hidden></span></button>
+    </header>
+    <div id="rv-hint" class="rv-hint" hidden>
+      <span data-icon="pin" data-icon-size="16"></span>
+      <span><b>Click anywhere</b> on the storyboard to leave a comment, or hover over any text and choose <b>Suggest edit</b> to propose new wording.</span>
+      <button id="rv-hint-close" type="button" class="icon-btn icon-btn-sm" aria-label="Dismiss tip" data-icon="x"></button>
+    </div>
+    <div class="rv-layout">
+      <main id="rv-doc" class="rv-doc" data-anchor="page" aria-live="polite">
+        <div class="rv-state">Loading…</div>
+      </main>
+      <aside id="rv-panel" class="rv-panel" aria-label="Comments"></aside>
+    </div>
+    <div id="rv-popover" class="rv-popover" role="dialog" aria-label="New comment" hidden></div>
+    <div id="toasts" class="toasts" aria-live="polite"></div>
+
+    <script src="js/util.js"></script>
+    <script src="js/cloud.js"></script>
+    <script src="js/threads.js"></script>
+    <script src="js/review.js"></script>
+  </body>
+</html>

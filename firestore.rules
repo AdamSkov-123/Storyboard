@@ -1,0 +1,102 @@
+rules_version = '2';
+
+// Security rules for Storyboard Maker client review links.
+// Paste this whole file into Firebase console → Firestore Database → Rules → Publish.
+//
+// Who can do what:
+// - Anyone with a review link can view the storyboard and all comments (no account needed;
+//   browsers sign in anonymously behind the scenes so people can edit their own comments).
+// - Nobody can list or browse reviews; you need the exact link.
+// - Commenters can edit or delete only their own comments. Whoever started a thread can delete it.
+// - Only the storyboard's owner (the app that holds the secret owner key) can update the
+//   storyboard, resolve comments, post "Team" replies, or delete anything.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function reviewPath(reviewId) {
+      return /databases/$(database)/documents/reviews/$(reviewId);
+    }
+
+    function isOwner(reviewId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/reviews/$(reviewId)/owners/$(request.auth.uid));
+    }
+
+    match /reviews/{reviewId} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if signedIn()
+        && request.resource.data.ownerKeyHash is string
+        && request.resource.data.ownerKeyHash.size() == 64;
+      allow update: if isOwner(reviewId)
+        && request.resource.data.ownerKeyHash == resource.data.ownerKeyHash;
+      allow delete: if isOwner(reviewId);
+
+      // Proof of ownership: a browser becomes an owner by presenting the secret key whose
+      // SHA-256 hash is stored on the review. These documents are never readable by others.
+      match /owners/{uid} {
+        allow get: if signedIn() && request.auth.uid == uid;
+        allow create: if signedIn()
+          && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['key', 'createdAt'])
+          && request.resource.data.key is string
+          && hashing.sha256(request.resource.data.key).toHexString().lower()
+             == get(reviewPath(reviewId)).data.ownerKeyHash;
+        allow delete: if signedIn() && request.auth.uid == uid;
+        allow list, update: if false;
+      }
+
+      match /images/{imageId} {
+        allow read: if true;
+        allow write: if isOwner(reviewId);
+      }
+
+      match /comments/{commentId} {
+        function validContent(d) {
+          return d.authorName is string
+            && d.authorName.size() > 0
+            && d.authorName.size() <= 80
+            && d.body is string
+            && d.body.size() <= 5000
+            && d.kind in ['comment', 'suggestion', 'reply'];
+        }
+
+        function startedThread() {
+          return resource.data.parentId is string
+            && get(/databases/$(database)/documents/reviews/$(reviewId)/comments/$(resource.data.parentId)).data.authorUid == request.auth.uid;
+        }
+
+        allow read: if true;
+
+        allow create: if signedIn()
+          && exists(reviewPath(reviewId))
+          && request.resource.data.authorUid == request.auth.uid
+          && validContent(request.resource.data)
+          && request.resource.data.status == 'open'
+          && request.resource.data.isTeam is bool
+          && (request.resource.data.isTeam == false || isOwner(reviewId));
+
+        allow update: if signedIn() && (
+          (resource.data.authorUid == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['body', 'suggestion', 'updatedAt', 'edited', 'authorName'])
+            && validContent(request.resource.data))
+          || (isOwner(reviewId)
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['status', 'resolvedAt', 'resolvedBy']))
+        );
+
+        allow delete: if signedIn() && (
+          resource.data.authorUid == request.auth.uid
+          || isOwner(reviewId)
+          || startedThread()
+        );
+      }
+    }
+  }
+}

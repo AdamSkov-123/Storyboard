@@ -1,0 +1,441 @@
+/* Storyboard Maker — client review links: Firebase setup, publishing and updating the online storyboard. */
+(function (SB) {
+  'use strict';
+  const U = SB.util;
+  const S = SB.store;
+  const R = SB.render;
+  const C = SB.cloud;
+  const SH = (SB.share = {});
+
+  const $ = (id) => document.getElementById(id);
+  let dlg;
+  let busy = false;
+  let progressText = '';
+  let lastError = '';
+
+  /* ---------- Settings (kept per browser) ---------- */
+
+  SH.settings = function () {
+    const emulator = U.storage.get('sb-emulator', '') || new URLSearchParams(location.search).get('emulator') || '';
+    const cfg = U.storage.get('sb-firebase-config', null);
+    return {
+      cfg: cfg && cfg.apiKey ? Object.assign({}, cfg, emulator ? { emulator } : {}) : emulator ? { apiKey: 'demo-key', projectId: 'demo-storyboard', emulator } : null,
+      reviewBase: U.storage.get('sb-review-base', '') || C.defaultReviewPage(),
+      teamName: U.storage.get('sb-team-name', ''),
+    };
+  };
+
+  /** The Firebase config a project's existing link lives in (so the link keeps working if settings change). */
+  SH.projectCfg = function (review) {
+    review = review || S.project.review;
+    if (!review) return null;
+    const cfg = { apiKey: review.apiKey, projectId: review.projectId };
+    if (review.emulator) cfg.emulator = review.emulator;
+    return cfg;
+  };
+
+  SH.link = function (review) {
+    review = review || S.project.review;
+    return review ? C.reviewLink(review.base, SH.projectCfg(review), review.id) : '';
+  };
+
+  /** Ask once for the name shown on the team's replies. */
+  SH.ensureTeamName = async function () {
+    let name = SH.settings().teamName;
+    if (name) return name;
+    const r = await U.choose({
+      title: 'Your name for replies',
+      message: 'Clients will see this name, with a “Team” badge, on replies you post. You can change it later in Client link settings.',
+      input: { placeholder: 'e.g. Sam at Northlight Films', maxlength: 80 },
+      buttons: [
+        { id: 'cancel', label: 'Cancel' },
+        { id: 'ok', label: 'Save name', kind: 'primary' },
+      ],
+    });
+    name = r && r.id === 'ok' ? r.value.trim() : '';
+    if (name) U.storage.set('sb-team-name', name);
+    return name || null;
+  };
+
+  /* ---------- Publishing ---------- */
+
+  const frameFP = (f, aspect) => C.hash(JSON.stringify([f.imageId, f.view, f.arrows, aspect]));
+
+  function payload(project, fps) {
+    const fields = project.fields.map((fd) => ({ id: fd.id, label: fd.label }));
+    const frames = project.frames.map((f) => {
+      const text = {};
+      for (const fd of project.fields) {
+        const v = (f.text[fd.id] || '').trim();
+        if (v) text[fd.id] = f.text[fd.id];
+      }
+      return { id: f.id, text, rev: f.imageId ? fps[f.id] : null };
+    });
+    const c = project.cover;
+    return {
+      title: project.title || 'Untitled storyboard',
+      aspect: { id: project.aspect, ratio: S.aspect(project) },
+      fields,
+      frames,
+      cover: {
+        include: !!c.include,
+        client: c.client || '',
+        company: c.company || '',
+        date: c.date || '',
+        version: c.version || '',
+        description: c.description || '',
+        rev: c.imageId ? fps.cover : null,
+      },
+      teamName: SH.settings().teamName || '',
+    };
+  }
+
+  function currentFingerprints(project) {
+    const fps = {};
+    for (const f of project.frames) fps[f.id] = frameFP(f, project.aspect);
+    if (project.cover.imageId) fps.cover = C.hash('cover:' + project.cover.imageId);
+    return fps;
+  }
+
+  /** True when the storyboard has changed since the link was last updated. */
+  SH.isOutdated = function () {
+    const review = S.project.review;
+    if (!review) return false;
+    const p = payload(S.project, currentFingerprints(S.project));
+    delete p.teamName;
+    return C.hash(JSON.stringify(p)) !== review.sig;
+  };
+
+  /** Render a frame as a JPEG data URL small enough for one Firestore document (< 1 MB). */
+  function frameImageData(frame, ratio) {
+    let maxSide = 1400;
+    let quality = 0.82;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const w = ratio >= 1 ? maxSide : maxSide * ratio;
+      const c = R.frameCanvas(frame, ratio, w, { full: true });
+      const data = c.toDataURL('image/jpeg', quality);
+      if (data.length < 900000) return data;
+      quality = Math.max(0.5, quality - 0.1);
+      maxSide = Math.round(maxSide * 0.85);
+    }
+    throw new Error('A frame image is too large to upload.');
+  }
+
+  function coverImageData(im) {
+    const max = Math.max(im.w, im.h);
+    const s = Math.min(1, 1400 / max);
+    const c = S.scaleToCanvas(im.img, Math.round(im.w * s), Math.round(im.h * s), true);
+    return c.toDataURL('image/jpeg', 0.85);
+  }
+
+  SH.publish = async function () {
+    if (busy) return false;
+    const project = S.project;
+    const existing = project.review;
+    const settings = SH.settings();
+    const cfg = existing ? SH.projectCfg(existing) : settings.cfg;
+    if (!cfg) {
+      SH.open();
+      return false;
+    }
+    busy = true;
+    lastError = '';
+    setProgress('Connecting…');
+    try {
+      const conn = await C.connect(cfg);
+      const fps = currentFingerprints(project);
+      const ratio = S.aspect(project);
+      let review = existing;
+      const data = payload(project, fps);
+      if (!review) {
+        review = {
+          id: U.randomKey(12),
+          key: U.randomKey(16),
+          apiKey: cfg.apiKey,
+          projectId: cfg.projectId,
+          base: settings.reviewBase,
+          fp: {},
+        };
+        if (cfg.emulator) review.emulator = cfg.emulator;
+        setProgress('Creating link…');
+        await C.createReview(conn, review.id, review.key, Object.assign({}, data, { frames: [], revision: 0 }));
+        // Remember the link right away so a failed upload can be resumed with "Update link".
+        S.updateSilently((p) => (p.review = Object.assign({}, review, { sig: '' })));
+      } else {
+        await C.ensureOwner(conn, review.id, review.key);
+      }
+      const oldFp = Object.assign({}, review.fp || {});
+      const toUpload = project.frames.filter((f) => f.imageId && oldFp[f.id] !== fps[f.id]);
+      let done = 0;
+      for (const f of toUpload) {
+        setProgress(`Uploading frame ${S.frameIndex(f.id) + 1} (${++done} of ${toUpload.length})…`);
+        await C.putImage(conn, review.id, f.id, frameImageData(f, ratio), fps[f.id]);
+        await new Promise((r) => setTimeout(r, 0));
+      }
+      const coverIm = project.cover.imageId ? S.images.get(project.cover.imageId) : null;
+      if (coverIm && oldFp.cover !== fps.cover) {
+        setProgress('Uploading cover image…');
+        await C.putImage(conn, review.id, 'cover', coverImageData(coverIm), fps.cover);
+      }
+      const stale = Object.keys(oldFp).filter((id) => !(id in fps) || (id !== 'cover' && !S.frameById(id)?.imageId));
+      for (const id of stale) await C.deleteImage(conn, review.id, id).catch(() => {});
+      setProgress('Finishing…');
+      await C.updateReview(conn, review.id, Object.assign({}, data, { revision: (review.revision || 0) + 1 }));
+      const sigData = Object.assign({}, data);
+      delete sigData.teamName;
+      const newFp = {};
+      for (const [k, v] of Object.entries(fps)) if (k === 'cover' || S.frameById(k)?.imageId) newFp[k] = v;
+      S.updateSilently((p) => {
+        p.review = Object.assign({}, review, { fp: newFp, sig: C.hash(JSON.stringify(sigData)), revision: (review.revision || 0) + 1, publishedAt: Date.now() });
+      });
+      SB.feedback.connect();
+      U.toast(existing ? 'Client link updated' : 'Client link created');
+      return true;
+    } catch (e) {
+      console.error(e);
+      lastError = C.explainError(e);
+      U.toast('Couldn’t update the client link: ' + lastError, { type: 'error', duration: 9000 });
+      return false;
+    } finally {
+      busy = false;
+      setProgress('');
+    }
+  };
+
+  SH.stopSharing = async function () {
+    const review = S.project.review;
+    if (!review) return;
+    const ok = await U.confirm(
+      'Stop sharing this storyboard?',
+      'The client link will stop working and all comments on it will be permanently deleted. You can create a new link later.',
+      'Stop sharing',
+      true
+    );
+    if (!ok) return;
+    busy = true;
+    setProgress('Deleting the online copy…');
+    try {
+      const conn = await C.connect(SH.projectCfg(review));
+      await C.ensureOwner(conn, review.id, review.key);
+      await C.deleteReview(conn, review.id);
+    } catch (e) {
+      console.error(e);
+      busy = false;
+      setProgress('');
+      const forget = await U.confirm('Couldn’t delete the online copy', C.explainError(e) + '\n\nRemove the link from this storyboard anyway?', 'Remove link', true);
+      if (!forget) return;
+    }
+    busy = false;
+    setProgress('');
+    S.updateSilently((p) => (p.review = null));
+    SB.feedback.connect();
+    U.toast('Sharing stopped');
+  };
+
+  /* ---------- Dialog ---------- */
+
+  SH.init = function () {
+    dlg = $('share-dialog');
+    dlg.addEventListener('cancel', (e) => {
+      if (busy) e.preventDefault();
+    });
+    S.subscribe(() => {
+      if (dlg.open && !busy) render();
+    });
+  };
+
+  SH.open = function (opts) {
+    lastError = '';
+    render(opts);
+    if (!dlg.open) dlg.showModal();
+  };
+
+  function setProgress(text) {
+    progressText = text;
+    if (dlg && dlg.open) render();
+  }
+
+  function render(opts) {
+    const body = $('share-body');
+    const foot = $('share-foot');
+    const settings = SH.settings();
+    const review = S.project.review;
+    const showSetup = (opts && opts.setup) || (!review && !settings.cfg);
+    body.replaceChildren();
+    foot.replaceChildren();
+    if (showSetup) renderSetup(body, foot, settings);
+    else if (!review) renderReady(body, foot, settings);
+    else renderShared(body, foot, settings, review);
+    if (progressText) {
+      foot.prepend(U.h('span', { class: 'muted small', text: progressText }), U.h('span', { class: 'spacer' }));
+      U.$$('button', foot).forEach((b) => (b.disabled = true));
+    }
+  }
+
+  function closeBtn(label) {
+    return U.h('button', { type: 'button', class: 'btn btn-ghost', text: label || 'Close', onclick: () => dlg.close() });
+  }
+
+  function renderSetup(body, foot, settings) {
+    const steps = U.h(
+      'ol',
+      { class: 'steps' },
+      U.h('li', { html: 'Go to <a href="https://console.firebase.google.com/" target="_blank" rel="noopener">console.firebase.google.com</a>, sign in with a Google account and click <b>Create a project</b>. Any name works, and you can turn Google Analytics off. The free “Spark” plan is all you need.' }),
+      U.h('li', { html: 'In the left menu open <b>Firestore Database</b> and click <b>Create database</b>. Choose the <b>Standard</b> edition if asked, pick a location near you, and start in <b>production mode</b>.' }),
+      U.h('li', {}, U.h('span', { html: 'In Firestore, open the <b>Rules</b> tab, replace everything with these rules, then click <b>Publish</b>. ' }), U.h('button', { type: 'button', class: 'link-btn', text: 'Copy rules', onclick: async () => U.toast((await U.copyText(SB.FIRESTORE_RULES)) ? 'Rules copied, now paste them in Firebase' : 'Copy failed. The rules are in firestore.rules in this project.') })),
+      U.h('li', { html: 'In the left menu open <b>Authentication</b>, click <b>Get started</b>, then on the <b>Sign-in method</b> tab enable <b>Anonymous</b>. Clients never see a sign-in screen.' }),
+      U.h('li', { html: 'Open <b>Project settings</b> (gear icon) → <b>Your apps</b> → the <b>&lt;/&gt;</b> (Web) button. Register an app with any nickname (you don’t need Firebase Hosting), then copy the <code>firebaseConfig</code> code it shows and paste it here.' })
+    );
+    const cfgText = U.h('textarea', { class: 'input', rows: '7', placeholder: 'const firebaseConfig = {\n  apiKey: "…",\n  authDomain: "…",\n  projectId: "…",\n  …\n};' });
+    const current = U.storage.get('sb-firebase-config', null);
+    if (current) cfgText.value = `apiKey: "${current.apiKey}",\nprojectId: "${current.projectId}"`;
+    const base = U.h('input', { class: 'input', type: 'url', value: settings.reviewBase });
+    const status = U.h('div');
+    if (lastError) status.append(U.h('p', { class: 'notice notice-warn', text: lastError }));
+    const connect = U.h('button', { type: 'button', class: 'btn btn-primary', text: 'Connect' });
+    connect.addEventListener('click', async () => {
+      const cfg = C.parseConfig(cfgText.value);
+      if (!cfg) {
+        status.replaceChildren(U.h('p', { class: 'notice notice-warn', text: 'Couldn’t find apiKey and projectId in what you pasted. Paste the whole firebaseConfig block.' }));
+        return;
+      }
+      let url = base.value.trim();
+      try {
+        url = new URL(url).href;
+      } catch (e) {
+        status.replaceChildren(U.h('p', { class: 'notice notice-warn', text: 'The review page address must be a full web address starting with https://' }));
+        return;
+      }
+      connect.disabled = true;
+      status.replaceChildren(U.h('p', { class: 'notice', text: 'Checking your Firebase project…' }));
+      try {
+        await C.testConnection(cfg);
+        U.storage.set('sb-firebase-config', cfg);
+        U.storage.set('sb-review-base', url);
+        lastError = '';
+        U.toast('Connected to Firebase');
+        render();
+      } catch (e) {
+        console.error(e);
+        lastError = C.explainError(e);
+        status.replaceChildren(U.h('p', { class: 'notice notice-warn', text: lastError }));
+      } finally {
+        connect.disabled = false;
+      }
+    });
+    body.append(
+      U.h(
+        'div',
+        { class: 'share-grid' },
+        U.h('div', {}, U.h('p', { class: 'muted', text: 'One-time setup, about 10 minutes. The online storyboard and its comments are stored in your own free Firebase project. Clients don’t need any account.' }), steps),
+        U.h(
+          'div',
+          { class: 'form-stack' },
+          U.h('div', { class: 'form-row' }, U.h('label', { text: 'Firebase config' }), cfgText),
+          U.h(
+            'div',
+            { class: 'form-row' },
+            U.h('label', { text: 'Review page address' }),
+            base,
+            U.h('span', { class: 'muted small', html: 'Where clients open links. With GitHub Pages turned on for this repository this is <code>https://&lt;you&gt;.github.io/Storyboard/review.html</code>. See the README.' })
+          ),
+          status
+        )
+      )
+    );
+    foot.append(closeBtn('Cancel'), connect);
+  }
+
+  function teamNameRow(settings) {
+    const input = U.h('input', { class: 'input', type: 'text', value: settings.teamName, placeholder: 'e.g. Sam at Northlight Films', maxlength: '80' });
+    input.addEventListener('change', () => U.storage.set('sb-team-name', input.value.trim()));
+    return U.h('div', { class: 'form-row' }, U.h('label', { text: 'Your name on replies' }), input, U.h('span', { class: 'muted small', text: 'Shown with a “Team” badge when you reply to client comments.' }));
+  }
+
+  function renderReady(body, foot, settings) {
+    body.append(
+      U.h(
+        'div',
+        { class: 'form-stack' },
+        U.h('p', { class: 'notice notice-ok', text: `Connected to Firebase project “${settings.cfg.projectId}”.` }),
+        U.h('p', { text: 'Creating a link uploads a copy of this storyboard (frames as you see them, with framing and arrows, plus the filled-in text and cover page). Anyone with the link can view it and comment. Nobody can find it without the link.' }),
+        teamNameRow(settings),
+        lastError ? U.h('p', { class: 'notice notice-warn', text: lastError }) : null,
+        U.h('button', { type: 'button', class: 'link-btn', text: 'Change Firebase settings…', onclick: () => SH.open({ setup: true }) })
+      )
+    );
+    const create = U.h('button', { type: 'button', class: 'btn btn-primary', html: U.icon('link', 16) + '<span>Create client link</span>' });
+    create.addEventListener('click', async () => {
+      if (!S.project.frames.length) {
+        U.toast('Add some frames before sharing.');
+        return;
+      }
+      await SH.publish();
+      render();
+    });
+    foot.append(closeBtn(), create);
+  }
+
+  function renderShared(body, foot, settings, review) {
+    const link = SH.link(review);
+    const linkInput = U.h('input', { class: 'input', type: 'text', readonly: true, value: link, 'aria-label': 'Client link' });
+    linkInput.addEventListener('focus', () => linkInput.select());
+    const outdated = SH.isOutdated();
+    body.append(
+      U.h(
+        'div',
+        { class: 'form-stack' },
+        U.h(
+          'div',
+          { class: 'form-row' },
+          U.h('label', { text: 'Send this link to your client' }),
+          U.h(
+            'div',
+            { class: 'link-box' },
+            linkInput,
+            U.h('button', {
+              type: 'button',
+              class: 'btn btn-primary',
+              html: U.icon('copy', 15) + '<span>Copy</span>',
+              onclick: async () => U.toast((await U.copyText(link)) ? 'Link copied' : 'Select the link and copy it'),
+            }),
+            U.h('a', { class: 'btn btn-ghost', href: link, target: '_blank', rel: 'noopener', html: U.icon('eye', 15) + '<span>Open</span>' })
+          )
+        ),
+        U.h(
+          'div',
+          { class: 'share-status' },
+          outdated
+            ? U.h('span', { class: 'notice notice-warn', text: 'You’ve changed the storyboard since the link was last updated. Clients still see the older version.' })
+            : U.h('span', { class: 'notice notice-ok', text: 'The client link shows the latest version.' }),
+          review.publishedAt ? U.h('span', { class: 'muted small', text: `Last updated ${U.timeAgo(review.publishedAt)}` }) : null
+        ),
+        lastError ? U.h('p', { class: 'notice notice-warn', text: lastError }) : null,
+        teamNameRow(settings),
+        U.h(
+          'details',
+          { class: 'share-advanced' },
+          U.h('summary', { text: 'More options' }),
+          U.h(
+            'div',
+            { class: 'stack-sm' },
+            U.h('p', { class: 'muted small', text: `Stored in Firebase project “${review.projectId}”. Comments stay attached to frames when you reorder or update them.` }),
+            U.h('button', { type: 'button', class: 'btn btn-ghost btn-sm danger', text: 'Stop sharing and delete comments…', onclick: () => SH.stopSharing() }),
+            U.h('button', { type: 'button', class: 'link-btn', text: 'Change Firebase settings for new links…', onclick: () => SH.open({ setup: true }) })
+          )
+        )
+      )
+    );
+    const update = U.h('button', { type: 'button', class: 'btn ' + (outdated ? 'btn-primary' : 'btn-ghost'), html: U.icon('refresh', 15) + '<span>Update link</span>' });
+    update.addEventListener('click', async () => {
+      await SH.publish();
+      render();
+    });
+    foot.append(
+      U.h('button', { type: 'button', class: 'btn btn-ghost', html: U.icon('message', 15) + '<span>View feedback</span>', onclick: () => (dlg.close(), SB.feedback.open()) }),
+      U.h('span', { class: 'spacer' }),
+      closeBtn(),
+      update
+    );
+  }
+})(window.SB);
