@@ -130,10 +130,12 @@
   };
 
   function move(delta) {
+    if (S.readOnly) return;
     SB.board.moveFrame(frameId, delta);
   }
 
   function deleteCurrent() {
+    if (S.readOnly) return;
     const idx = S.frameIndex(frameId);
     const frames = S.project.frames;
     const neighbour = frames[idx + 1] || frames[idx - 1];
@@ -143,6 +145,7 @@
   }
 
   async function replaceImage() {
+    if (S.readOnly) return;
     const [file] = await U.pickFiles({ accept: 'image/*' });
     if (!file) return;
     try {
@@ -220,6 +223,7 @@
         extras.push(U.h('datalist', { id: listId }));
       }
       input.value = value;
+      input.readOnly = !!S.readOnly;
       host.append(U.h('div', { class: 'form-row' + (value.trim() ? ' has-value' : '') }, U.h('label', { for: id, text: fd.label }), input, extras));
     }
     requestAnimationFrame(() => U.$$('textarea', host).forEach(U.autoGrow));
@@ -233,6 +237,7 @@
     }
     const f = frame();
     U.$$('[data-field]', host).forEach((inp) => {
+      inp.readOnly = !!S.readOnly;
       const v = f.text[inp.dataset.field] || '';
       if (inp.value !== v) {
         inp.value = v;
@@ -582,7 +587,7 @@
   }
 
   function onPointerDown(e) {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || S.readOnly) return;
     const f = frame();
     if (!f) return;
     const p = local(e);
@@ -699,7 +704,7 @@
   }
 
   function onWheel(e) {
-    if (tool !== 'reframe') return;
+    if (tool !== 'reframe' || S.readOnly) return;
     const f = frame();
     const im = imageOf(f);
     if (!im) return;
@@ -710,7 +715,7 @@
   }
 
   function onDoubleClick(e) {
-    if (tool !== 'arrows') return;
+    if (tool !== 'arrows' || S.readOnly) return;
     const f = frame();
     const hit = f && hitTest(f, local(e), 9);
     if (hit && hit.handle === 'mid') {
@@ -721,6 +726,7 @@
   function onKeyDown(e) {
     if (U.isTyping(e.target) || (e.target.matches && e.target.matches('input[type="range"]'))) return;
     if (e.ctrlKey || e.metaKey) return;
+    if (S.readOnly && (e.key === 'Delete' || e.key === 'Backspace' || (selectedId && e.key.startsWith('Arrow')))) return;
     if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
       e.preventDefault();
       deleteSelectedArrow();

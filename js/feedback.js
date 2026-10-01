@@ -333,7 +333,7 @@
       if (g.frame) gh.addEventListener('click', () => SB.editor.open(g.frame.id));
       group.append(gh);
       for (const t of g.threads) {
-        group.append(SB.threads.render(t, Object.assign({}, ctxBase, { uid, pin: t.pin, context: contextLabel(t.root), active: focusTarget === g.key, replyAs: replyAsText() })));
+        group.append(SB.threads.render(t, Object.assign({}, ctxBase, { uid, pin: t.pin, context: contextLabel(t.root), active: focusTarget === g.key, replyAs: replyAsText(), onAccept: S.readOnly ? null : acceptSuggestion })));
       }
       list.append(group);
     }

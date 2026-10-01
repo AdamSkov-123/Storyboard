@@ -55,7 +55,34 @@
   async function doRoute() {
     const id = routeId();
     closeOverlays();
-    if (id && S.hasProject(id)) {
+    // Leaving a team storyboard: finish saving and unlock it first.
+    if (SB.team.sessionId() && SB.team.sessionId() !== id) {
+      const leaving = SB.team.sessionId();
+      const discard = SB.team.createdHere() && isEmptyProject(S.project);
+      await SB.team.close();
+      if (discard) {
+        await S.closeProject();
+        await SB.team.deleteBoard(leaving, { silent: true });
+      }
+    }
+    if (id && SB.team.isTeamBoard(id)) {
+      if (SB.team.sessionId() !== id) {
+        fileHandle = null;
+        $('home-view').hidden = true;
+        $('editor-view').hidden = false;
+        $('board').replaceChildren(U.h('div', { class: 'loading', text: 'Opening storyboard…' }));
+        if (!(await SB.team.open(id))) {
+          history.replaceState(null, '', '#home');
+          return doRoute();
+        }
+        SB.share.adoptSettings(null, S.project.review);
+      }
+      $('home-view').hidden = true;
+      $('editor-view').hidden = false;
+      syncTopbar();
+      SB.board.render();
+      window.scrollTo(0, 0);
+    } else if (id && S.hasProject(id) && !S.recordFor(id).team) {
       if (S.currentId !== id) {
         fileHandle = null;
         $('home-view').hidden = true;
@@ -70,10 +97,10 @@
       SB.board.render();
       window.scrollTo(0, 0);
     } else {
-      if (id) U.toast('That storyboard isn’t in this browser.', { type: 'error' });
+      if (id) U.toast(S.hasProject(id) ? 'Sign in to open team storyboards.' : 'That storyboard isn’t in this browser.', { type: 'error' });
       if (S.currentId) {
         const leaving = S.currentId;
-        const empty = isEmptyProject(S.project);
+        const empty = isEmptyProject(S.project) && !(S.recordFor(leaving) || {}).team;
         await S.closeProject();
         if (empty) await S.deleteProject(leaving); // "New storyboard" clicked but nothing added
       }
@@ -93,7 +120,19 @@
   }
 
   A.newProject = async function (files) {
-    const id = await S.createProject();
+    let id;
+    if (SB.team.isMember()) {
+      // Signed in to a team: new storyboards are team storyboards.
+      try {
+        id = await SB.team.createBoard();
+      } catch (e) {
+        console.error(e);
+        U.toast('Couldn’t create a team storyboard: ' + SB.team.explain(e), { type: 'error', duration: 9000 });
+        return;
+      }
+    } else {
+      id = await S.createProject();
+    }
     await A.go(id);
     if (files && files.length && S.currentId === id) await A.addImages(files);
   };
@@ -101,6 +140,10 @@
   /* ---------- Adding images ---------- */
 
   A.addImages = async function (files) {
+    if (S.readOnly && S.currentId) {
+      U.toast('This storyboard is view-only right now.');
+      return;
+    }
     if (!files) files = await U.pickFiles({ accept: 'image/*', multiple: true });
     files = Array.from(files || []).filter(isImageFile);
     if (!files.length) return;
@@ -277,7 +320,21 @@
     document.title = (p.title ? p.title + ' – ' : '') + 'Storyboard Maker';
   }
 
+  /** Team storyboards: show whether changes have reached the team. */
+  A.showCloudState = function (state) {
+    if (!state) {
+      showSaveState(S.saveState);
+      return;
+    }
+    const el = $('save-status');
+    const text = { saving: 'Saving to team…', saved: 'Saved to team', offline: 'Offline: changes will reach the team when you reconnect', error: 'Couldn’t save to team; retrying…', viewing: 'View only: someone else can edit this storyboard right now' }[state] || '';
+    el.textContent = { saved: 'Saved to team', saving: 'Saving…', offline: 'Offline', viewing: 'View only' }[state] || 'Not saved to team';
+    el.title = text;
+    el.dataset.state = state === 'saved' || state === 'saving' || state === 'viewing' ? 'saved' : 'error';
+  };
+
   function showSaveState(state) {
+    if (SB.team && SB.team.sessionId() && SB.team.cloudState) return;
     const el = $('save-status');
     const text = { saving: 'Saving…', saved: 'All changes saved in this browser', error: 'Autosave failed', off: 'Autosave unavailable' }[state] || '';
     el.textContent = state === 'saved' ? 'Saved' : text;
@@ -437,6 +494,33 @@
     initDragDrop();
     initKeyboard();
     S.subscribe(syncTopbar);
+    S.subscribe((meta) => {
+      if (meta.readOnly) document.body.classList.toggle('is-readonly', S.readOnly);
+    });
+    SB.team.subscribe(() => {
+      if (A.isHome()) SB.home.render();
+    });
+    // A team link (#team=1&p=…) connects this browser to the team's Firebase project.
+    const join = SB.share.readTeamLink(location.hash);
+    if (join) {
+      history.replaceState(null, '', location.href.split('#')[0] + '#home');
+      if (join.status === 'invalid') U.toast('That team link is incomplete. Ask a teammate to copy it again.', { type: 'error' });
+      if (join.status === 'different') {
+        const ok = await U.confirm(
+          'Switch to this team?',
+          `This browser is connected to another Firebase project (“${join.current.projectId}”). Switch to “${join.cfg.projectId}”? Storyboards on this computer stay, and client links you’ve already sent keep working.`,
+          'Switch'
+        );
+        if (ok) {
+          for (const r of S.listProjects()) if (r.team) await S.forgetProject(r.id);
+          S.gcImages();
+          SB.share.useTeamCfg(join.cfg);
+        }
+      }
+    }
+    // Team sign-in status (don't hold up the app for long if offline).
+    await Promise.race([SB.team.init().then(() => SB.team.ready), new Promise((r) => setTimeout(r, 6000))]);
+    if (join && join.cfg && SB.team.status === 'signed-out') U.toast('Connected to your team. Sign in with Google to see its storyboards.', { duration: 8000 });
     showSaveState(S.saveState);
     window.addEventListener('hashchange', onHashChange);
     await route();

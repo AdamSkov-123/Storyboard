@@ -2418,3 +2418,231 @@ a.icon-btn {
     width: 100%;
   }
 }
+@media (max-width: 480px) {
+  .home-top .brand-name {
+    display: none;
+  }
+}
+
+/* ---------- Team: view-only mode, banner, storage, account ---------- */
+
+.team-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 24px 0;
+  padding: 10px 12px 10px 14px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent-soft-text);
+}
+.team-bar-text {
+  flex: 1;
+}
+.team-bar-icon {
+  display: grid;
+}
+body.is-readonly .card-actions,
+body.is-readonly #add-images-btn,
+body.is-readonly #add-blank-btn,
+body.is-readonly .add-tile,
+body.is-readonly .empty-state .btn,
+body.is-readonly #ed-reframe-panel,
+body.is-readonly #ed-arrow-panel,
+body.is-readonly .tool-tabs,
+body.is-readonly #ed-move-earlier,
+body.is-readonly #ed-move-later,
+body.is-readonly #ed-replace,
+body.is-readonly #ed-duplicate,
+body.is-readonly #ed-delete,
+body.is-readonly #ed-manage-fields,
+body.is-readonly #cover-today,
+body.is-readonly #cover-image-btn,
+body.is-readonly #cover-image-remove,
+body.is-readonly #fields-add,
+body.is-readonly #fields-reset,
+body.is-readonly .field-row button,
+body.is-readonly .field-row select,
+body.is-readonly #ed-hint {
+  display: none !important;
+}
+body.is-readonly #undo-btn,
+body.is-readonly #redo-btn,
+body.is-readonly #aspect-select,
+body.is-readonly #project-title {
+  pointer-events: none;
+  opacity: 0.6;
+}
+body.is-readonly .card-frame {
+  cursor: pointer;
+}
+body.is-readonly .stage canvas {
+  cursor: default !important;
+}
+
+.account {
+  position: relative;
+}
+.account-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 10px 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+.account-btn img,
+.account-btn .avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+}
+.account .menu-pop {
+  width: 260px;
+}
+.account-email {
+  padding: 8px 10px 6px;
+  font-size: 12.5px;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+.google-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.google-btn svg {
+  width: 18px;
+  height: 18px;
+}
+.home-section {
+  margin-top: 30px;
+}
+.home-section:first-of-type {
+  margin-top: 0;
+}
+.home-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.home-section-head h2 {
+  font-size: 18px;
+}
+.home-section-head p {
+  margin: 2px 0 0;
+}
+.team-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 16px 18px;
+  margin-bottom: 22px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.team-card > div {
+  flex: 1;
+  min-width: 240px;
+}
+.team-card h3 {
+  font-size: 15px;
+  margin-bottom: 2px;
+}
+.team-card p {
+  margin: 0;
+  color: var(--text-2);
+}
+.storage {
+  min-width: 260px;
+  max-width: 420px;
+  flex: 1;
+}
+.storage-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.storage-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--accent);
+  transition: width 0.3s;
+}
+.storage.is-warn .storage-fill {
+  background: var(--pin);
+}
+.storage.is-full .storage-fill {
+  background: var(--danger);
+}
+.storage-text {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 5px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.storage.is-full .storage-text {
+  color: var(--danger);
+}
+.home-badge.is-locked {
+  background: var(--pin);
+  color: var(--pin-text);
+}
+.home-badge.is-local {
+  background: var(--surface-3);
+  color: var(--text-2);
+}
+.member-list {
+  list-style: none;
+  margin: 12px 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.member-row {
+  display: grid;
+  grid-template-columns: 28px 1fr auto 28px;
+  align-items: center;
+  gap: 10px;
+}
+.member-row select {
+  width: auto;
+}
+.member-email {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.member-add {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+}
+.member-approve {
+  margin-top: 16px;
+}
+.member-approve .member-list {
+  margin: 4px 0 0;
+}
+@media (max-width: 640px) {
+  .team-bar {
+    margin: 6px 16px 0;
+    flex-wrap: wrap;
+  }
+  .member-add {
+    grid-template-columns: 1fr;
+  }
+}

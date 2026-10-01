@@ -1,9 +1,15 @@
 rules_version = '2';
 
-// Security rules for Storyboard Maker client review links.
+// Security rules for Storyboard Maker: team storyboards and client review links.
 // Paste this whole file into Firebase console → Firestore Database → Rules → Publish.
 //
-// Who can do what:
+// Who can do what (team storyboards):
+// - People sign in with Google. Only emails an admin has approved (members/{email}) can see or
+//   open the team's storyboards. The first person to set up the team becomes its admin.
+// - One editor at a time: only the member holding a storyboard's lock can save it. Any member can
+//   take the lock (the app asks first) or release it.
+//
+// Who can do what (client review links):
 // - Anyone with a review link can view the storyboard and all comments (no account needed;
 //   browsers sign in anonymously behind the scenes so people can edit their own comments).
 // - Nobody can list or browse reviews; you need the exact link.
@@ -26,6 +32,98 @@ service cloud.firestore {
       return signedIn()
         && exists(/databases/$(database)/documents/reviews/$(reviewId)/owners/$(request.auth.uid));
     }
+
+    // ---------- Team: Google accounts approved by an admin ----------
+
+    function googleUser() {
+      return request.auth != null
+        && request.auth.token.firebase.sign_in_provider == 'google.com'
+        && request.auth.token.email_verified == true;
+    }
+
+    function myEmail() {
+      return request.auth.token.email.lower();
+    }
+
+    function memberPath(email) {
+      return /databases/$(database)/documents/members/$(email);
+    }
+
+    function teamPath() {
+      return /databases/$(database)/documents/team/settings;
+    }
+
+    function isMember() {
+      return googleUser() && exists(memberPath(myEmail()));
+    }
+
+    function isAdmin() {
+      return isMember() && get(memberPath(myEmail())).data.role == 'admin';
+    }
+
+    function validMember(email) {
+      return request.resource.data.keys().hasOnly(['email', 'role', 'name', 'addedBy', 'addedAt'])
+        && request.resource.data.email == email
+        && request.resource.data.role in ['admin', 'member'];
+    }
+
+    match /team/settings {
+      allow get: if googleUser();
+      allow create: if googleUser()
+        && request.resource.data.createdBy == request.auth.uid
+        && getAfter(memberPath(myEmail())).data.role == 'admin';
+      allow update: if isAdmin();
+    }
+
+    match /members/{email} {
+      allow get: if googleUser() && (email == myEmail() || isMember());
+      allow list: if isMember();
+      // Admins approve people. The very first admin is created together with the team itself.
+      allow create: if validMember(email) && (
+        isAdmin()
+        || (googleUser()
+          && email == myEmail()
+          && request.resource.data.role == 'admin'
+          && !exists(teamPath())
+          && getAfter(teamPath()).data.createdBy == request.auth.uid)
+      );
+      // Admins can't change or remove themselves, so a team can't lose its last admin by accident.
+      allow update: if isAdmin() && email != myEmail() && validMember(email);
+      allow delete: if isAdmin() && email != myEmail();
+    }
+
+    function holdsLock(boardId) {
+      let board = get(/databases/$(database)/documents/boards/$(boardId)).data;
+      return isMember() && board.lock != null && board.lock.uid == request.auth.uid;
+    }
+
+    match /boards/{boardId} {
+      allow read: if isMember();
+      allow create: if isMember() && request.resource.data.lock.uid == request.auth.uid;
+      allow update: if isMember() && (
+        // Taking, keeping or releasing the editing lock (the app asks before taking over).
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lock'])
+          && (request.resource.data.lock == null || request.resource.data.lock.uid == request.auth.uid))
+        // Saving: only whoever holds the lock, and they keep it.
+        || (resource.data.lock != null
+          && resource.data.lock.uid == request.auth.uid
+          && request.resource.data.lock != null
+          && request.resource.data.lock.uid == request.auth.uid)
+      );
+      allow delete: if isMember() && resource.data.lock != null && resource.data.lock.uid == request.auth.uid;
+
+      match /data/{docId} {
+        allow read: if isMember();
+        allow write: if holdsLock(boardId);
+      }
+
+      match /images/{imageId} {
+        allow read: if isMember();
+        allow write: if holdsLock(boardId);
+      }
+    }
+
+    // ---------- Client review links ----------
 
     match /reviews/{reviewId} {
       allow get: if true;

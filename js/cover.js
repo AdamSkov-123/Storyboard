@@ -59,6 +59,8 @@
     U.$$('[data-cover]', dlg).forEach((el) => {
       const key = el.dataset.cover;
       const v = key === 'title' ? p.title : p.cover[key];
+      if (el.type === 'checkbox') el.disabled = !!S.readOnly;
+      else el.readOnly = !!S.readOnly;
       if (el.type === 'checkbox') el.checked = !!v;
       else if (el.value !== (v || '')) el.value = v || '';
       if (el.tagName === 'TEXTAREA') requestAnimationFrame(() => U.autoGrow(el));

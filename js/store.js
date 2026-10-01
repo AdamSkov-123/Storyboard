@@ -151,6 +151,15 @@
   }
   S.emit = emit;
 
+  /** View-only mode: the open storyboard can't be changed (another team member is editing it). */
+  S.readOnly = false;
+  let readOnlyWarned = 0;
+  S.setReadOnly = function (value) {
+    if (S.readOnly === !!value) return;
+    S.readOnly = !!value;
+    emit({ readOnly: true });
+  };
+
   let past = [];
   let future = [];
   let snapshot = JSON.stringify(S.project);
@@ -162,6 +171,18 @@
    * Consecutive commits with the same key (e.g. typing in one field) merge into a single undo step.
    */
   S.commit = function (key, meta) {
+    if (S.readOnly) {
+      // View-only (someone else is editing): undo whatever was changed and say why.
+      if (JSON.stringify(S.project) !== snapshot) {
+        S.project = JSON.parse(snapshot);
+        emit({ history: 'remote' });
+      }
+      if (Date.now() - readOnlyWarned > 4000) {
+        readOnlyWarned = Date.now();
+        U.toast('This storyboard is view-only right now.');
+      }
+      return;
+    }
     const json = JSON.stringify(S.project);
     if (json === snapshot) {
       emit(Object.assign({ key, unchanged: true }, meta));
@@ -342,16 +363,20 @@
       }
     }
     records.set(id, rec);
-    if (!S.persistent) return;
-    setSaveState('saving');
-    try {
-      await putRecord(id);
-      setSaveState('saved');
-    } catch (e) {
-      console.error('Autosave failed', e);
-      setSaveState('error');
+    if (S.persistent) {
+      setSaveState('saving');
+      try {
+        await putRecord(id);
+        setSaveState('saved');
+      } catch (e) {
+        console.error('Autosave failed', e);
+        setSaveState('error');
+      }
     }
+    if (S.afterSave) S.afterSave(rec);
   }
+  /** Called after each local save with the saved library record (team sync hooks in here). */
+  S.afterSave = null;
   const debouncedSave = U.debounce(saveNow, 400);
   function scheduleSave() {
     pendingSave = true;
@@ -692,9 +717,76 @@
     data.review = null;
     data.title = (data.title || 'Untitled storyboard') + ' (copy)';
     const now = Date.now();
-    records.set(data.uid, Object.assign({}, rec, metaFor(data), { id: data.uid, createdAt: now, updatedAt: now, data }));
+    records.set(data.uid, Object.assign({}, rec, metaFor(data), { id: data.uid, createdAt: now, updatedAt: now, data, team: false }));
     await putRecord(data.uid).catch((e) => console.warn(e));
     return data.uid;
+  };
+
+  /* ---------- Team storyboards: local cache ---------- */
+
+  S.recordFor = (id) => records.get(id) || null;
+  S.imageIdsOf = (project) => referencedImageIds(project);
+  S.gcImages = () => gcImages().catch(() => {});
+
+  /** Store (or refresh) a team storyboard in this browser's cache. */
+  S.cacheProject = async function (id, project, meta) {
+    project.uid = id;
+    const prev = records.get(id) || { createdAt: Date.now(), thumb: null, thumbKey: '' };
+    records.set(id, Object.assign({}, prev, metaFor(project), meta || {}, { id, data: JSON.parse(JSON.stringify(project)) }));
+    await putRecord(id).catch((e) => console.warn(e));
+  };
+
+  S.setRecordMeta = async function (id, patch) {
+    const rec = records.get(id);
+    if (!rec) return;
+    Object.assign(rec, patch);
+    await putRecord(id).catch(() => {});
+  };
+
+  /** Remove a storyboard from this browser only (e.g. team storyboards when signing out). */
+  S.forgetProject = async function (id) {
+    if (S.currentId === id) await S.closeProject();
+    records.delete(id);
+    if (S.persistent) await idb('projects', 'readwrite', (s) => s.delete(id)).catch(() => {});
+  };
+
+  S.hasImage = async function (id) {
+    if (S.images.has(id)) return true;
+    if (!S.persistent) return false;
+    const key = await idb('images', 'readonly', (s) => s.getKey(id)).catch(() => undefined);
+    return key !== undefined;
+  };
+
+  S.getImageBlob = async function (id) {
+    const im = S.images.get(id);
+    if (im) return im.blob;
+    if (!S.persistent) return null;
+    const rec = await idb('images', 'readonly', (s) => s.get(id)).catch(() => null);
+    return rec ? rec.blob : null;
+  };
+
+  S.cacheImage = async function (id, blob) {
+    if (S.persistent) {
+      await idb('images', 'readwrite', (s) => s.put({ id, name: '', blob, w: 0, h: 0 }));
+    } else if (!S.images.has(id)) {
+      S.images.set(id, await makeEntry({ id, name: '', blob }));
+    }
+  };
+
+  /** Swap in a newer version of the open storyboard (live updates while viewing someone else's edits). */
+  S.replaceProject = async function (project) {
+    const id = S.currentId;
+    if (!id) return;
+    project.uid = id;
+    await loadImages(project);
+    S.project = project;
+    resetHistory();
+    const rec = records.get(id);
+    if (rec) {
+      Object.assign(rec, metaFor(project), { data: JSON.parse(JSON.stringify(project)) });
+      putRecord(id).catch(() => {});
+    }
+    emit({ history: 'remote' });
   };
 
   S.projectData = (id) => {

@@ -12,6 +12,7 @@
   let busy = false;
   let progressText = '';
   let lastError = '';
+  let mode = {}; // how the dialog was opened: {setup: true} jumps to Firebase settings, {home: true} from the home page
 
   /* ---------- Settings (kept per browser) ---------- */
 
@@ -75,6 +76,46 @@
     if (review.databaseId) cfg.databaseId = review.databaseId;
     if (review.emulator) cfg.emulator = review.emulator;
     return cfg;
+  };
+
+  /* ---------- Team link: connects another computer to the same Firebase project ---------- */
+
+  /** The app's address for teammates (where it's hosted), with this browser's Firebase project IDs in it. */
+  SH.teamLink = function () {
+    const cfg = SH.settings().cfg;
+    if (!cfg) return null;
+    const params = new URLSearchParams({ team: '1', p: cfg.projectId, k: cfg.apiKey });
+    if (cfg.databaseId) params.set('d', cfg.databaseId);
+    if (cfg.emulator) params.set('emu', cfg.emulator);
+    const base = new URL('./', SH.settings().reviewBase).href;
+    return base + '#' + params.toString();
+  };
+
+  /**
+   * Read a team link (#team=1&p=…&k=…&d=…). Returns null if the hash isn't one, otherwise
+   * {cfg, status: 'joined' | 'same' | 'different'}. 'joined' means this browser had no Firebase settings and now
+   * has the team's; 'different' means it already uses another project (call SH.useTeamCfg to switch).
+   */
+  SH.readTeamLink = function (hash) {
+    const params = new URLSearchParams(String(hash || '').replace(/^#/, ''));
+    if (params.get('team') !== '1') return null;
+    const projectId = params.get('p');
+    const apiKey = params.get('k');
+    const databaseId = C.normalizeDatabaseId(params.get('d'));
+    if (!isToken(projectId) || !isToken(apiKey) || databaseId === null) return { status: 'invalid' };
+    const cfg = { apiKey, projectId };
+    if (databaseId) cfg.databaseId = databaseId;
+    const current = U.storage.get('sb-firebase-config', null);
+    if (current && current.apiKey) {
+      const same = current.apiKey === apiKey && current.projectId === projectId && (current.databaseId || '') === (cfg.databaseId || '');
+      return { cfg, status: same ? 'same' : 'different', current };
+    }
+    U.storage.set('sb-firebase-config', cfg);
+    return { cfg, status: 'joined' };
+  };
+
+  SH.useTeamCfg = function (cfg) {
+    U.storage.set('sb-firebase-config', cfg);
   };
 
   SH.link = function (review) {
@@ -209,20 +250,30 @@
         await C.ensureOwner(conn, review.id, review.key);
       }
       const oldFp = Object.assign({}, review.fp || {});
+      const sizes = Object.assign({}, review.sizes || {}); // bytes stored per uploaded image (for the team storage bar)
       const toUpload = project.frames.filter((f) => f.imageId && oldFp[f.id] !== fps[f.id]);
       let done = 0;
       for (const f of toUpload) {
         setProgress(`Uploading frame ${S.frameIndex(f.id) + 1} (${++done} of ${toUpload.length})…`);
-        await C.putImage(conn, review.id, f.id, frameImageData(f, ratio), fps[f.id]);
+        const img = frameImageData(f, ratio);
+        await C.putImage(conn, review.id, f.id, img, fps[f.id]);
+        sizes[f.id] = img.length;
         await new Promise((r) => setTimeout(r, 0));
       }
       const coverIm = project.cover.imageId ? S.images.get(project.cover.imageId) : null;
       if (coverIm && oldFp.cover !== fps.cover) {
         setProgress('Uploading cover image…');
-        await C.putImage(conn, review.id, 'cover', coverImageData(coverIm), fps.cover);
+        const img = coverImageData(coverIm);
+        await C.putImage(conn, review.id, 'cover', img, fps.cover);
+        sizes.cover = img.length;
       }
       const stale = Object.keys(oldFp).filter((id) => !(id in fps) || (id !== 'cover' && !S.frameById(id)?.imageId));
-      for (const id of stale) await C.deleteImage(conn, review.id, id).catch(() => {});
+      for (const id of stale) {
+        await C.deleteImage(conn, review.id, id).catch(() => {});
+        delete sizes[id];
+      }
+      for (const id of Object.keys(sizes)) if (!(id in fps)) delete sizes[id];
+      const bytes = Object.values(sizes).reduce((a, b) => a + b, 0) + JSON.stringify(data).length;
       setProgress('Finishing…');
       await C.updateReview(conn, review.id, Object.assign({}, data, { revision: (review.revision || 0) + 1 }));
       const sigData = Object.assign({}, data);
@@ -230,7 +281,7 @@
       const newFp = {};
       for (const [k, v] of Object.entries(fps)) if (k === 'cover' || S.frameById(k)?.imageId) newFp[k] = v;
       S.updateSilently((p) => {
-        p.review = Object.assign({}, review, { fp: newFp, sig: C.hash(JSON.stringify(sigData)), revision: (review.revision || 0) + 1, publishedAt: Date.now() });
+        p.review = Object.assign({}, review, { fp: newFp, sizes, bytes, sig: C.hash(JSON.stringify(sigData)), revision: (review.revision || 0) + 1, publishedAt: Date.now() });
       });
       SB.feedback.connect();
       U.toast(existing ? 'Client link updated' : 'Client link created');
@@ -295,7 +346,8 @@
 
   SH.open = function (opts) {
     lastError = '';
-    render(opts);
+    mode = opts || {};
+    render();
     if (!dlg.open) dlg.showModal();
   };
 
@@ -304,12 +356,16 @@
     if (dlg && dlg.open) render();
   }
 
-  function render(opts) {
+  function render() {
     const body = $('share-body');
     const foot = $('share-foot');
     const settings = SH.settings();
     const review = S.project.review;
-    const showSetup = (opts && opts.setup) || (!review && !settings.cfg);
+    const showSetup = mode.setup || (!review && !settings.cfg);
+    $('share-h').textContent = mode.home ? 'Connect Firebase' : 'Client review link';
+    $('share-h').nextElementSibling.textContent = mode.home
+      ? 'Team storyboards are kept in your own free Firebase project, the same one client links use.'
+      : 'Clients open the link in any browser, type their name once, and leave comments and suggested edits. No account needed.';
     body.replaceChildren();
     foot.replaceChildren();
     if (showSetup) renderSetup(body, foot, settings);
@@ -325,6 +381,14 @@
     return U.h('button', { type: 'button', class: 'btn btn-ghost', text: label || 'Close', onclick: () => dlg.close() });
   }
 
+  const appHost = (settings) => {
+    try {
+      return new URL(settings.reviewBase).hostname;
+    } catch (e) {
+      return 'adamskov-123.github.io';
+    }
+  };
+
   function renderSetup(body, foot, settings) {
     const steps = U.h(
       'ol',
@@ -332,7 +396,7 @@
       U.h('li', { html: 'Go to <a href="https://console.firebase.google.com/" target="_blank" rel="noopener">console.firebase.google.com</a>, sign in with a Google account and click <b>Create a project</b>. Any name works, and you can turn Google Analytics off. The free “Spark” plan is all you need.' }),
       U.h('li', { html: 'In the left menu open <b>Databases &amp; Storage → Firestore</b> and click <b>Add database</b> (older consoles: <b>Build → Firestore Database → Create database</b>). Choose <b>Standard edition</b>. For <b>Database ID</b>, keep <code>(default)</code> if it’s offered. If you type your own ID instead, enter the same ID in the <b>Database ID</b> box on this screen. Pick a location near you, choose <b>Production mode</b>, and click <b>Create</b>.' }),
       U.h('li', {}, U.h('span', { html: 'When the database is ready, open its <b>Rules</b> tab, replace everything with these rules, then click <b>Publish</b>. ' }), U.h('button', { type: 'button', class: 'link-btn', text: 'Copy rules', onclick: async () => U.toast((await U.copyText(SB.FIRESTORE_RULES)) ? 'Rules copied, now paste them in Firebase' : 'Copy failed. The rules are in firestore.rules in this project.') })),
-      U.h('li', { html: 'In the left menu open <b>Security → Authentication</b> (older consoles: <b>Build → Authentication</b>) and click <b>Get started</b> if you see it. On the <b>Sign-in method</b> tab, enable <b>Anonymous</b> and save. Clients never see a sign-in screen.' }),
+      U.h('li', { html: `In the left menu open <b>Security → Authentication</b> (older consoles: <b>Build → Authentication</b>) and click <b>Get started</b> if you see it. On the <b>Sign-in method</b> tab, enable <b>Anonymous</b> (for client links; clients never see a sign-in screen). For team storyboards, also enable <b>Google</b>, then on the <b>Settings</b> tab open <b>Authorized domains</b> and add <code>${appHost(settings)}</code>.` }),
       U.h('li', { html: 'Open <b>Project settings</b> (gear icon next to <b>Project Overview</b>) → <b>Your apps</b> → the <b>&lt;/&gt;</b> (Web) button. Register an app with any nickname (you don’t need Firebase Hosting), then copy the <code>firebaseConfig</code> code it shows and paste it here.' })
     );
     const cfgText = U.h('textarea', { class: 'input', rows: '7', placeholder: 'const firebaseConfig = {\n  apiKey: "…",\n  authDomain: "…",\n  projectId: "…",\n  …\n};' });
@@ -379,6 +443,13 @@
         }
         lastError = '';
         U.toast('Connected to Firebase');
+        if (mode.home) {
+          // Set up from the home page for team storyboards: carry on there.
+          dlg.close();
+          SB.team.init();
+          return;
+        }
+        mode = {};
         render();
       } catch (e) {
         console.error(e);
@@ -395,9 +466,9 @@
         U.h(
           'div',
           {},
-          U.h('p', { class: 'muted', text: 'One-time setup, about 10 minutes. The online storyboard and its comments are stored in your own free Firebase project. Clients don’t need any account.' }),
+          U.h('p', { class: 'muted', text: 'One-time setup, about 10 minutes. Client links, their comments and team storyboards are stored in your own free Firebase project. Clients don’t need any account.' }),
           steps,
-          U.h('p', { class: 'muted small', text: 'You only do this once. Project files you save carry these settings, so opening one on another computer or browser sets it up automatically.' })
+          U.h('p', { class: 'muted small', text: 'You only do this once. Teammates don’t need to: they open the team link (from Team members on the home page). Project files you save carry these settings too.' })
         ),
         U.h(
           'div',
@@ -451,6 +522,11 @@
       await SH.publish();
       render();
     });
+    if (S.readOnly) {
+      body.append(U.h('p', { class: 'notice', text: 'Only the person editing this storyboard can create its client link.' }));
+      foot.append(closeBtn());
+      return;
+    }
     foot.append(closeBtn(), create);
   }
 
@@ -509,11 +585,17 @@
       await SH.publish();
       render();
     });
+    if (S.readOnly) {
+      U.$$('.share-advanced', body).forEach((el) => el.remove());
+      body.append(U.h('p', { class: 'notice', text: 'Only the person editing this storyboard can update or stop its client link.' }));
+    }
     foot.append(
-      U.h('button', { type: 'button', class: 'btn btn-ghost', html: U.icon('message', 15) + '<span>View feedback</span>', onclick: () => (dlg.close(), SB.feedback.open()) }),
-      U.h('span', { class: 'spacer' }),
-      closeBtn(),
-      update
+      ...[
+        U.h('button', { type: 'button', class: 'btn btn-ghost', html: U.icon('message', 15) + '<span>View feedback</span>', onclick: () => (dlg.close(), SB.feedback.open()) }),
+        U.h('span', { class: 'spacer' }),
+        closeBtn(),
+        S.readOnly ? null : update,
+      ].filter(Boolean)
     );
   }
 })(window.SB);

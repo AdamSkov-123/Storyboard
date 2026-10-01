@@ -7,13 +7,14 @@
   const B = (SB.board = {});
 
   let root;
+  let sortable = null;
   let deferred = false;
   let lastDragEnd = 0;
   const thumbCache = new Map(); // frameId -> {key, canvas}
 
   B.init = function () {
     root = document.getElementById('board');
-    Sortable.create(root, {
+    sortable = Sortable.create(root, {
       draggable: '.card-frame',
       filter: '.card-actions, .card-actions *, .card-badge',
       preventOnFilter: false,
@@ -75,6 +76,7 @@
 
   B.render = function () {
     deferred = false;
+    if (sortable) sortable.option('disabled', !!S.readOnly);
     const p = S.project;
     root.style.setProperty('--frame-ratio', S.aspect(p));
     const counts = SB.feedback ? SB.feedback.countsByTarget() : null;
@@ -244,6 +246,7 @@
     }
     if (!card || !card.classList.contains('card-frame')) return;
     const id = card.dataset.id;
+    if (S.readOnly && (act === 'duplicate' || act === 'delete')) return;
     if (act === 'duplicate') B.duplicateFrame(id);
     else if (act === 'delete') B.deleteFrame(id);
     else SB.editor.open(id);
@@ -258,7 +261,7 @@
       else if (card.classList.contains('card-frame')) SB.editor.open(card.dataset.id);
       return;
     }
-    if (!card.classList.contains('card-frame')) return;
+    if (!card.classList.contains('card-frame') || S.readOnly) return;
     const id = card.dataset.id;
     if (e.key === 'Delete' || e.key === 'Backspace') {
       e.preventDefault();

@@ -70,7 +70,7 @@
             U.h('button', { type: 'button', class: 'icon-btn icon-btn-sm', title: 'Move up', 'aria-label': 'Move up', dataset: { act: 'up' }, disabled: i === 0, html: U.icon('up', 16) }),
             U.h('button', { type: 'button', class: 'icon-btn icon-btn-sm', title: 'Move down', 'aria-label': 'Move down', dataset: { act: 'down' }, disabled: i === fields.length - 1, html: U.icon('down', 16) })
           ),
-          U.h('input', { type: 'text', class: 'input field-label', value: fd.label, 'aria-label': 'Field name', maxlength: '40' }),
+          U.h('input', { type: 'text', class: 'input field-label', value: fd.label, 'aria-label': 'Field name', maxlength: '40', readonly: !!S.readOnly }),
           U.h(
             'select',
             { class: 'input field-type', 'aria-label': 'Field size' },

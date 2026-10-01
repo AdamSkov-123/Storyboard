@@ -41,8 +41,11 @@
 
   const conns = new Map();
 
-  /** cfg: {apiKey, projectId, databaseId?, emulator?}. Signs in anonymously (the same browser keeps the same identity). */
-  C.connect = function (cfg) {
+  /**
+   * cfg: {apiKey, projectId, databaseId?, emulator?}. By default makes sure someone is signed in (anonymously if
+   * nobody is), which review links need. opts.anonymous === false skips that (the team code signs in with Google).
+   */
+  C.connect = async function (cfg, opts) {
     const databaseId = C.normalizeDatabaseId(cfg.databaseId) || '';
     const key = [cfg.projectId, cfg.apiKey, databaseId, cfg.emulator || ''].join('|');
     if (!conns.has(key)) {
@@ -59,7 +62,6 @@
             F.connectFirestoreEmulator(db, cfg.emulator, 8080);
           }
           await auth.authStateReady();
-          if (!auth.currentUser) await F.signInAnonymously(auth);
           return {
             F,
             app,
@@ -79,7 +81,9 @@
       conns.set(key, p);
       p.catch(() => conns.delete(key));
     }
-    return conns.get(key);
+    const conn = await conns.get(key);
+    if (!(opts && opts.anonymous === false) && !conn.auth.currentUser) await conn.F.signInAnonymously(conn.auth);
+    return conn;
   };
 
   C.explainError = function (e) {
