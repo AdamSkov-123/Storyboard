@@ -52,7 +52,11 @@
       <button id="fields-btn" type="button" class="btn btn-ghost" data-icon="list"><span>Fields</span></button>
       <span id="frame-count" class="muted small"></span>
       <span class="spacer"></span>
-      <label class="size-control hide-sm">
+      <div id="board-view" class="seg board-view" role="group" aria-label="View">
+        <button type="button" class="seg-btn" data-view="grid" title="All frames in a grid" aria-label="Grid"><span data-icon="view-cols3" data-icon-size="16"></span><span class="hide-sm">Grid</span></button>
+        <button type="button" class="seg-btn" data-view="single" title="One frame at a time" aria-label="One frame at a time"><span data-icon="view-single" data-icon-size="16"></span><span class="hide-sm">One at a time</span></button>
+      </div>
+      <label id="card-size-control" class="size-control hide-sm">
         <span class="muted small">Card size</span>
         <input id="card-size" type="range" min="180" max="520" step="10" aria-label="Card size" />
       </label>

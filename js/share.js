@@ -16,9 +16,12 @@
 
   /* ---------- Settings (kept per browser) ---------- */
 
-  /** The Firebase project built into this copy of the app (js/config.js), or null. */
+  const emulatorHost = () => U.storage.get('sb-emulator', '') || new URLSearchParams(location.search).get('emulator') || '';
+
+  /** The Firebase project built into this copy of the app (js/config.js), or null. Ignored when testing with the local emulator. */
   SH.builtIn = function () {
     const c = window.SB_FIREBASE_CONFIG;
+    if (emulatorHost()) return null;
     if (!c || !isToken(c.apiKey) || !isToken(c.projectId)) return null;
     const cfg = { apiKey: c.apiKey, projectId: c.projectId };
     const databaseId = C.normalizeDatabaseId(c.databaseId);
@@ -27,7 +30,7 @@
   };
 
   SH.settings = function () {
-    const emulator = U.storage.get('sb-emulator', '') || new URLSearchParams(location.search).get('emulator') || '';
+    const emulator = emulatorHost();
     const stored = U.storage.get('sb-firebase-config', null);
     const cfg = SH.builtIn() || (stored && stored.apiKey ? stored : null);
     return {

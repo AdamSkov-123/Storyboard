@@ -9,7 +9,8 @@ Nothing to install and no build step. It's plain HTML, CSS and JavaScript.
 **Building the storyboard**
 - **Images become frames.** Click *Add images*, or drop image files anywhere on the page. Each image becomes one frame, added in filename order (`01.jpg`, `02.jpg`, … `10.jpg`). You can also paste an image from the clipboard or add a blank frame.
 - **Automatic numbering.** Frames are numbered by position and renumber themselves whenever you reorder.
-- **Reordering.** Drag cards on the board. With the keyboard, focus a card and press <kbd>Alt</kbd>+<kbd>←</kbd>/<kbd>→</kbd>. In the frame editor, use *Move earlier* / *Move later*.
+- **Two ways to view the board.** *Grid* shows every frame as a card (use *Card size* to make them bigger or smaller). *One at a time* shows a single large frame with its text beside it, like the client page: step through with *Previous*/*Next* or the arrow keys, or jump with the filmstrip of numbered thumbnails at the bottom. Type straight into the text beside the frame. Empty fields stay out of the way as *+ Setting*, *+ Dialogue*… buttons until you need them. Click the frame to reframe it or draw arrows. The app remembers which view you used last.
+- **Reordering.** Drag cards on the board, or drag thumbnails in the filmstrip in *One at a time* view. With the keyboard, press <kbd>Alt</kbd>+<kbd>←</kbd>/<kbd>→</kbd> (on a focused card in the grid, or on the frame you're viewing one at a time). In the frame editor, use *Move earlier* / *Move later*.
 - **Text fields.** Each frame has Setting, Shot type, Action, Voiceover, Dialogue and Notes. Use *Fields* to add, rename, reorder or remove fields, and choose single-line or multi-line for each. **Empty fields are hidden** on the board, in PDFs and on client links. Single-line fields suggest values you've already used (handy for repeating settings), and Shot type offers standard shot names.
 - **One aspect ratio for the whole board.** Choose from 16:9, 1.85:1, 2.39:1, 2:1, 4:3, 3:2, 1:1, 4:5 and 9:16 in the top bar.
 - **Reframe and crop.** In the frame editor's *Reframe* tool, drag to reposition and scroll (or use the slider) to zoom. *Fit* shows the whole image letterboxed, *Fill* fills the frame, and *Flip* mirrors the image. The parts of the image outside the frame stay faintly visible while you work.
@@ -106,6 +107,7 @@ Open a storyboard, click **Client link → Create client link**, and send the li
 | Anywhere | <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Z</kbd>, <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> | Undo / redo |
 | Anywhere | <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>S</kbd>, <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>O</kbd> | Save / open project |
 | Board (card focused) | <kbd>Enter</kbd>, <kbd>Delete</kbd>, <kbd>Alt</kbd>+<kbd>←</kbd>/<kbd>→</kbd> | Edit, delete, move frame |
+| One at a time view | <kbd>←</kbd>/<kbd>→</kbd>, <kbd>Alt</kbd>+<kbd>←</kbd>/<kbd>→</kbd> | Previous / next frame, move this frame |
 | Frame editor | <kbd>Page Up</kbd>/<kbd>Page Down</kbd> | Previous / next frame |
 | Frame editor | <kbd>R</kbd> / <kbd>A</kbd> | Reframe / Arrows tool |
 | Frame editor | <kbd>Delete</kbd>, arrow keys | Delete or nudge the selected arrow |
@@ -151,4 +153,4 @@ npx firebase-tools emulators:start --only firestore,auth --project demo-storyboa
 python3 -m http.server 8099   # in another terminal
 ```
 
-Then open `http://127.0.0.1:8099/index.html?emulator=127.0.0.1`. To make the setting stick, run `localStorage.setItem('sb-emulator', '"127.0.0.1"')` in the console. Set `sb-review-base` to `"http://127.0.0.1:8099/review.html"` so links point at the local review page. With the emulator, *Sign in* asks for an email address instead of showing Google's sign-in, so you can try several team members in separate browser profiles. Keep `js/config.js` empty when testing against the emulator. After editing `firestore.rules`, run `node tools/sync-rules.mjs`.
+Then open `http://127.0.0.1:8099/index.html?emulator=127.0.0.1`. To make the setting stick, run `localStorage.setItem('sb-emulator', '"127.0.0.1"')` in the console. Set `sb-review-base` to `"http://127.0.0.1:8099/review.html"` so links point at the local review page. With the emulator, *Sign in* asks for an email address instead of showing Google's sign-in, so you can try several team members in separate browser profiles. In emulator mode the app ignores `js/config.js`, so local testing never touches your real Firebase project. After editing `firestore.rules`, run `node tools/sync-rules.mjs`.

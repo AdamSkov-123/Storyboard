@@ -99,9 +99,10 @@
       }
     });
     dlg.addEventListener('close', () => {
+      const last = frameId;
       frameId = null;
       drag = null;
-      SB.board.flush();
+      SB.board.flush(last);
     });
 
     S.subscribe(onStoreChange);
@@ -265,19 +266,23 @@
   }
 
   function onFieldFocus(e) {
-    const inp = e.target;
+    E.fillSuggestions(e.target, frameId);
+  }
+
+  /** Fill a single-line field's suggestion list: values used on other frames (most used first), then presets. */
+  E.fillSuggestions = function (inp, exceptFrameId) {
     if (!inp.list || !inp.dataset.field) return;
     const fid = inp.dataset.field;
     const fd = S.project.fields.find((x) => x.id === fid);
     const counts = new Map();
     for (const fr of S.project.frames) {
       const v = (fr.text[fid] || '').trim();
-      if (v && fr.id !== frameId) counts.set(v, (counts.get(v) || 0) + 1);
+      if (v && fr.id !== exceptFrameId) counts.set(v, (counts.get(v) || 0) + 1);
     }
     const used = Array.from(counts.keys()).sort((a, b) => counts.get(b) - counts.get(a));
     const options = Array.from(new Set(used.concat((fd && fd.presets) || []))).slice(0, 60);
     inp.list.replaceChildren(...options.map((v) => U.h('option', { value: v })));
-  }
+  };
 
   /* ---------- Tools ---------- */
 
