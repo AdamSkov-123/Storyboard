@@ -109,7 +109,8 @@
     const conn = await C.connect(cfg);
     const { F, db } = conn;
     const timeout = new Promise((_, reject) => setTimeout(() => reject(Object.assign(new Error('timeout'), { code: 'unavailable' })), 15000));
-    await Promise.race([F.getDoc(F.doc(db, 'reviews', '__connection_test__')), timeout]);
+    // Any ID works here (it just needs to be readable under the rules); note Firestore reserves IDs like __x__.
+    await Promise.race([F.getDoc(F.doc(db, 'reviews', 'connection-check')), timeout]);
     return conn;
   };
 

@@ -332,9 +332,13 @@
     );
     const cfgText = U.h('textarea', { class: 'input', rows: '7', placeholder: 'const firebaseConfig = {\n  apiKey: "…",\n  authDomain: "…",\n  projectId: "…",\n  …\n};' });
     const current = U.storage.get('sb-firebase-config', null);
+    const draft = U.storage.get('sb-firebase-draft', null);
     if (current) cfgText.value = `apiKey: "${current.apiKey}",\nprojectId: "${current.projectId}"`;
-    const dbInput = U.h('input', { class: 'input', type: 'text', value: (current && current.databaseId) || '', placeholder: '(default)', autocomplete: 'off', spellcheck: 'false' });
-    const base = U.h('input', { class: 'input', type: 'url', value: settings.reviewBase });
+    else if (draft && draft.text) cfgText.value = draft.text;
+    const dbInput = U.h('input', { class: 'input', type: 'text', value: (current && current.databaseId) || (draft && draft.databaseId) || '', placeholder: '(default)', autocomplete: 'off', spellcheck: 'false' });
+    const base = U.h('input', { class: 'input', type: 'url', value: (!current && draft && draft.base) || settings.reviewBase });
+    const saveDraft = () => U.storage.set('sb-firebase-draft', { text: cfgText.value, databaseId: dbInput.value, base: base.value });
+    [cfgText, dbInput, base].forEach((el) => el.addEventListener('input', saveDraft));
     const status = U.h('div');
     if (lastError) status.append(U.h('p', { class: 'notice notice-warn', text: lastError }));
     const connect = U.h('button', { type: 'button', class: 'btn btn-primary', text: 'Connect' });
@@ -363,6 +367,11 @@
         await C.testConnection(cfg);
         U.storage.set('sb-firebase-config', cfg);
         U.storage.set('sb-review-base', url);
+        try {
+          localStorage.removeItem('sb-firebase-draft');
+        } catch (err) {
+          /* ignore */
+        }
         lastError = '';
         U.toast('Connected to Firebase');
         render();
