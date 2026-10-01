@@ -6,7 +6,7 @@
 
   /** Where clients open review links when the app itself isn't hosted (e.g. opened from disk). */
   C.DEFAULT_REVIEW_PAGE = 'https://adamskov-123.github.io/Storyboard/review.html';
-  C.FIREBASE_SCRIPT = 'js/vendor/firebase.js';
+  C.FIREBASE_SCRIPT = 'js/vendor/firebase.js?v=905060ebf3';
 
   C.defaultReviewPage = function () {
     if (/^https?:$/.test(location.protocol) && !/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {

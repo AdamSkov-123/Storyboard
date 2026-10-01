@@ -2051,10 +2051,10 @@ a.icon-btn {
 /* ---------- Board: one frame at a time ---------- */
 
 .board-view .seg-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 10px;
+  display: grid;
+  place-items: center;
+  min-width: 34px;
+  padding: 0 8px;
 }
 .board[data-view='single'] {
   display: block;

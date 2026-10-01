@@ -72,10 +72,13 @@
       if (meta.source === 'single' && isSingle()) return; // typing in the one-at-a-time view: nothing else to redraw
       B.requestRender();
     });
-    document.getElementById('board-view').addEventListener('click', (e) => {
-      const b = e.target.closest('[data-view]');
-      if (b) B.setView(b.dataset.view);
-    });
+    const viewSwitch = document.getElementById('board-view');
+    if (viewSwitch) {
+      viewSwitch.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-view]');
+        if (b) B.setView(b.dataset.view);
+      });
+    }
     syncViewButtons();
     document.addEventListener('keydown', onSingleKey);
   };

@@ -6,7 +6,7 @@
     <title>Storyboard Maker</title>
     <meta name="description" content="Build storyboards from your images, add shot details and arrows, export PDFs and collect client feedback." />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234f46e5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2' y='4' width='9' height='7' rx='1.5'/%3E%3Crect x='13' y='4' width='9' height='7' rx='1.5'/%3E%3Crect x='2' y='13' width='9' height='7' rx='1.5'/%3E%3Cpath d='M14 15h7M14 18h5'/%3E%3C/svg%3E" />
-    <link rel="stylesheet" href="css/styles.css" />
+    <link rel="stylesheet" href="css/styles.css?v=45c79bde4e" />
   </head>
   <body class="app">
     <div id="home-view" class="home" hidden></div>
@@ -53,8 +53,8 @@
       <span id="frame-count" class="muted small"></span>
       <span class="spacer"></span>
       <div id="board-view" class="seg board-view" role="group" aria-label="View">
-        <button type="button" class="seg-btn" data-view="grid" title="All frames in a grid" aria-label="Grid"><span data-icon="view-cols3" data-icon-size="16"></span><span class="hide-sm">Grid</span></button>
-        <button type="button" class="seg-btn" data-view="single" title="One frame at a time" aria-label="One frame at a time"><span data-icon="view-single" data-icon-size="16"></span><span class="hide-sm">One at a time</span></button>
+        <button type="button" class="seg-btn" data-view="grid" data-icon="view-cols3" data-icon-size="16" title="Grid: all frames" aria-label="Grid: all frames"></button>
+        <button type="button" class="seg-btn" data-view="single" data-icon="view-single" data-icon-size="16" title="One frame at a time" aria-label="One frame at a time"></button>
       </div>
       <label id="card-size-control" class="size-control hide-sm">
         <span class="muted small">Card size</span>
@@ -267,24 +267,24 @@
       <div class="modal-foot" id="share-foot"></div>
     </dialog>
 
-    <script src="js/vendor/jspdf.umd.min.js"></script>
-    <script src="js/vendor/Sortable.min.js"></script>
-    <script src="js/util.js"></script>
-    <script src="js/store.js"></script>
-    <script src="js/render.js"></script>
-    <script src="js/board.js"></script>
-    <script src="js/editor.js"></script>
-    <script src="js/cover.js"></script>
-    <script src="js/fields.js"></script>
-    <script src="js/pdf.js"></script>
-    <script src="js/rules.js"></script>
-    <script src="js/config.js"></script>
-    <script src="js/cloud.js"></script>
-    <script src="js/threads.js"></script>
-    <script src="js/share.js"></script>
-    <script src="js/feedback.js"></script>
-    <script src="js/team.js"></script>
-    <script src="js/home.js"></script>
-    <script src="js/app.js"></script>
+    <script src="js/vendor/jspdf.umd.min.js?v=e6551fcdc3"></script>
+    <script src="js/vendor/Sortable.min.js?v=bf4241bc73"></script>
+    <script src="js/util.js?v=c44c2a6cd2"></script>
+    <script src="js/store.js?v=92b82b6f87"></script>
+    <script src="js/render.js?v=12044a758c"></script>
+    <script src="js/board.js?v=12bf572b46"></script>
+    <script src="js/editor.js?v=5e04f745f1"></script>
+    <script src="js/cover.js?v=98fee8dc22"></script>
+    <script src="js/fields.js?v=6af05eae1e"></script>
+    <script src="js/pdf.js?v=97c6c5cde6"></script>
+    <script src="js/rules.js?v=f28303eda3"></script>
+    <script src="js/config.js?v=7ae0d43cac"></script>
+    <script src="js/cloud.js?v=29bfc76710"></script>
+    <script src="js/threads.js?v=b81a6b21d5"></script>
+    <script src="js/share.js?v=8be9c06c45"></script>
+    <script src="js/feedback.js?v=c461d0d8f4"></script>
+    <script src="js/team.js?v=2407111c2a"></script>
+    <script src="js/home.js?v=ab3e50d402"></script>
+    <script src="js/app.js?v=46065d3469"></script>
   </body>
 </html>
