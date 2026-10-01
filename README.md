@@ -54,20 +54,25 @@ This also hosts the page your clients open, so you need it for client links.
 Client links need somewhere online to keep the storyboard and comments. They live in **your own free Firebase project** (Google). Only you set this up; clients never need an account.
 
 1. Go to [console.firebase.google.com](https://console.firebase.google.com/), sign in with a Google account and click **Create a project**. Any name works, and you can turn Google Analytics off. The free **Spark** plan is all you need, with no credit card.
-2. In the left menu open **Firestore Database** → **Create database**. Choose the *Standard* edition if asked, pick a location near you, and start in **production mode**.
-3. Still in Firestore, open the **Rules** tab, replace everything with the contents of [`firestore.rules`](firestore.rules) (the app's setup screen has a *Copy rules* button), and click **Publish**.
-4. In the left menu open **Authentication** → **Get started** → **Sign-in method**, and enable **Anonymous**.
-5. Open **Project settings** (gear icon) → **Your apps** → the **`</>`** (Web) button. Register an app with any nickname (you don't need Firebase Hosting) and copy the `firebaseConfig` code it shows.
-6. In Storyboard Maker click **Client link**, paste the config, check the **Review page address** (your GitHub Pages address from Option B, ending in `review.html`), and click **Connect**.
+2. In the left menu open **Databases & Storage → Firestore** and click **Add database**. (Older consoles call it **Build → Firestore Database → Create database**.)
+   - Choose **Standard edition**.
+   - **Database ID:** keep `(default)` if it's offered. If you type your own ID (for example `storyboards`), you'll enter the same ID in the app in step 6.
+   - Pick a location near you, choose **Production mode**, and click **Create**.
+3. When the database is ready, open its **Rules** tab, replace everything with the contents of [`firestore.rules`](firestore.rules) (the app's setup screen has a *Copy rules* button), and click **Publish**.
+4. In the left menu open **Security → Authentication** (older consoles: **Build → Authentication**) and click **Get started** if you see it. On the **Sign-in method** tab, enable **Anonymous** and save.
+5. Open **Project settings** (gear icon next to *Project Overview*) → **Your apps** → the **`</>`** (Web) button. Register an app with any nickname (you don't need Firebase Hosting) and copy the `firebaseConfig` code it shows.
+6. In Storyboard Maker click **Client link** and paste the config. If you gave your database its own ID in step 2, type it in **Database ID** (otherwise leave that box empty). Check the **Review page address** (your GitHub Pages address from Option B, ending in `review.html`) and click **Connect**.
 
 Then click **Create client link** and send the link to your client.
+
+**You only do this once.** The same Firebase project holds the links for all your storyboards: for each new one, just click **Client link → Create client link**. Project files you save (*File → Save project*) carry these settings, so when you open one on another computer, in another browser, or in the hosted copy, that browser is set up automatically, and you don't paste anything again. (Your *name on replies* isn't included, since each person sets their own.)
 
 ### Good to know
 - **Privacy.** Anyone with a link can view that storyboard and comment. Links contain a long random ID, and nobody can list or browse your storyboards. *Client link → More options → Stop sharing* deletes the online copy and its comments, and the link stops working.
 - **Permissions** are enforced by the security rules, not just the app. Commenters can only edit or delete their own comments, and whoever started a thread can delete it. Only the browser that created a link can update it, resolve comments or post as *Team*. If you open the project file on another computer, that browser can do so too, because the file carries a secret owner key. Keep project files to yourself.
 - **What gets uploaded:** each frame as you see it (framing and arrows included, about 1400 px wide), the filled-in text, and the cover page. Your original images stay on your computer.
 - **Free plan limits.** Firestore's free tier stores 1 GiB and serves 50,000 document reads a day, which is plenty for typical client reviews. Each time a client opens a link, it reads about one document per frame.
-- The Firebase web config isn't a secret; it's designed to be public. It's stored in your browser, never in this repository.
+- The Firebase web config isn't a secret; it's designed to be public. It's stored in your browser and in the project files you save, never in this repository.
 
 ## Keyboard shortcuts
 

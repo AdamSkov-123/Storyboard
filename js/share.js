@@ -25,11 +25,54 @@
     };
   };
 
+  /** Settings saved inside project files so any computer that opens one is ready to create client links. */
+  SH.portableSettings = function () {
+    const cfg = U.storage.get('sb-firebase-config', null);
+    if (!cfg || !cfg.apiKey || !cfg.projectId) return null;
+    const out = { firebase: { apiKey: cfg.apiKey, projectId: cfg.projectId } };
+    if (cfg.databaseId) out.firebase.databaseId = cfg.databaseId;
+    const base = U.storage.get('sb-review-base', '');
+    if (base) out.reviewBase = base;
+    return out;
+  };
+
+  const isWebUrl = (s) => {
+    try {
+      return /^https?:$/.test(new URL(s).protocol);
+    } catch (e) {
+      return false;
+    }
+  };
+  const isToken = (s) => typeof s === 'string' && /^[A-Za-z0-9_.:-]{3,200}$/.test(s);
+
+  /**
+   * Fill in this browser's Firebase settings from an opened project (its saved settings, or the config its
+   * existing link uses). Never overwrites settings the browser already has. Returns true if anything was set.
+   */
+  SH.adoptSettings = function (settings, review) {
+    const current = U.storage.get('sb-firebase-config', null);
+    if (current && current.apiKey) return false;
+    let fb = settings && settings.firebase;
+    let base = settings && settings.reviewBase;
+    if (!fb && review && review.apiKey && !review.emulator) {
+      fb = { apiKey: review.apiKey, projectId: review.projectId, databaseId: review.databaseId };
+      base = base || review.base;
+    }
+    if (!fb || !isToken(fb.apiKey) || !isToken(fb.projectId)) return false;
+    const databaseId = C.normalizeDatabaseId(fb.databaseId);
+    const cfg = { apiKey: fb.apiKey, projectId: fb.projectId };
+    if (databaseId) cfg.databaseId = databaseId;
+    U.storage.set('sb-firebase-config', cfg);
+    if (base && isWebUrl(base) && !U.storage.get('sb-review-base', '')) U.storage.set('sb-review-base', base);
+    return true;
+  };
+
   /** The Firebase config a project's existing link lives in (so the link keeps working if settings change). */
   SH.projectCfg = function (review) {
     review = review || S.project.review;
     if (!review) return null;
     const cfg = { apiKey: review.apiKey, projectId: review.projectId };
+    if (review.databaseId) cfg.databaseId = review.databaseId;
     if (review.emulator) cfg.emulator = review.emulator;
     return cfg;
   };
@@ -156,6 +199,7 @@
           base: settings.reviewBase,
           fp: {},
         };
+        if (cfg.databaseId) review.databaseId = cfg.databaseId;
         if (cfg.emulator) review.emulator = cfg.emulator;
         setProgress('Creating link…');
         await C.createReview(conn, review.id, review.key, Object.assign({}, data, { frames: [], revision: 0 }));
@@ -281,14 +325,15 @@
       'ol',
       { class: 'steps' },
       U.h('li', { html: 'Go to <a href="https://console.firebase.google.com/" target="_blank" rel="noopener">console.firebase.google.com</a>, sign in with a Google account and click <b>Create a project</b>. Any name works, and you can turn Google Analytics off. The free “Spark” plan is all you need.' }),
-      U.h('li', { html: 'In the left menu open <b>Firestore Database</b> and click <b>Create database</b>. Choose the <b>Standard</b> edition if asked, pick a location near you, and start in <b>production mode</b>.' }),
-      U.h('li', {}, U.h('span', { html: 'In Firestore, open the <b>Rules</b> tab, replace everything with these rules, then click <b>Publish</b>. ' }), U.h('button', { type: 'button', class: 'link-btn', text: 'Copy rules', onclick: async () => U.toast((await U.copyText(SB.FIRESTORE_RULES)) ? 'Rules copied, now paste them in Firebase' : 'Copy failed. The rules are in firestore.rules in this project.') })),
-      U.h('li', { html: 'In the left menu open <b>Authentication</b>, click <b>Get started</b>, then on the <b>Sign-in method</b> tab enable <b>Anonymous</b>. Clients never see a sign-in screen.' }),
-      U.h('li', { html: 'Open <b>Project settings</b> (gear icon) → <b>Your apps</b> → the <b>&lt;/&gt;</b> (Web) button. Register an app with any nickname (you don’t need Firebase Hosting), then copy the <code>firebaseConfig</code> code it shows and paste it here.' })
+      U.h('li', { html: 'In the left menu open <b>Databases &amp; Storage → Firestore</b> and click <b>Add database</b> (older consoles: <b>Build → Firestore Database → Create database</b>). Choose <b>Standard edition</b>. For <b>Database ID</b>, keep <code>(default)</code> if it’s offered. If you type your own ID instead, enter the same ID in the <b>Database ID</b> box on this screen. Pick a location near you, choose <b>Production mode</b>, and click <b>Create</b>.' }),
+      U.h('li', {}, U.h('span', { html: 'When the database is ready, open its <b>Rules</b> tab, replace everything with these rules, then click <b>Publish</b>. ' }), U.h('button', { type: 'button', class: 'link-btn', text: 'Copy rules', onclick: async () => U.toast((await U.copyText(SB.FIRESTORE_RULES)) ? 'Rules copied, now paste them in Firebase' : 'Copy failed. The rules are in firestore.rules in this project.') })),
+      U.h('li', { html: 'In the left menu open <b>Security → Authentication</b> (older consoles: <b>Build → Authentication</b>) and click <b>Get started</b> if you see it. On the <b>Sign-in method</b> tab, enable <b>Anonymous</b> and save. Clients never see a sign-in screen.' }),
+      U.h('li', { html: 'Open <b>Project settings</b> (gear icon next to <b>Project Overview</b>) → <b>Your apps</b> → the <b>&lt;/&gt;</b> (Web) button. Register an app with any nickname (you don’t need Firebase Hosting), then copy the <code>firebaseConfig</code> code it shows and paste it here.' })
     );
     const cfgText = U.h('textarea', { class: 'input', rows: '7', placeholder: 'const firebaseConfig = {\n  apiKey: "…",\n  authDomain: "…",\n  projectId: "…",\n  …\n};' });
     const current = U.storage.get('sb-firebase-config', null);
     if (current) cfgText.value = `apiKey: "${current.apiKey}",\nprojectId: "${current.projectId}"`;
+    const dbInput = U.h('input', { class: 'input', type: 'text', value: (current && current.databaseId) || '', placeholder: '(default)', autocomplete: 'off', spellcheck: 'false' });
     const base = U.h('input', { class: 'input', type: 'url', value: settings.reviewBase });
     const status = U.h('div');
     if (lastError) status.append(U.h('p', { class: 'notice notice-warn', text: lastError }));
@@ -299,6 +344,12 @@
         status.replaceChildren(U.h('p', { class: 'notice notice-warn', text: 'Couldn’t find apiKey and projectId in what you pasted. Paste the whole firebaseConfig block.' }));
         return;
       }
+      const databaseId = C.normalizeDatabaseId(dbInput.value);
+      if (databaseId === null) {
+        status.replaceChildren(U.h('p', { class: 'notice notice-warn', text: 'That Database ID doesn’t look right. Copy it exactly as shown in Firestore, or leave the box empty to use “(default)”.' }));
+        return;
+      }
+      if (databaseId) cfg.databaseId = databaseId;
       let url = base.value.trim();
       try {
         url = new URL(url).href;
@@ -327,11 +378,24 @@
       U.h(
         'div',
         { class: 'share-grid' },
-        U.h('div', {}, U.h('p', { class: 'muted', text: 'One-time setup, about 10 minutes. The online storyboard and its comments are stored in your own free Firebase project. Clients don’t need any account.' }), steps),
+        U.h(
+          'div',
+          {},
+          U.h('p', { class: 'muted', text: 'One-time setup, about 10 minutes. The online storyboard and its comments are stored in your own free Firebase project. Clients don’t need any account.' }),
+          steps,
+          U.h('p', { class: 'muted small', text: 'You only do this once. Project files you save carry these settings, so opening one on another computer or browser sets it up automatically.' })
+        ),
         U.h(
           'div',
           { class: 'form-stack' },
           U.h('div', { class: 'form-row' }, U.h('label', { text: 'Firebase config' }), cfgText),
+          U.h(
+            'div',
+            { class: 'form-row' },
+            U.h('label', { text: 'Database ID' }),
+            dbInput,
+            U.h('span', { class: 'muted small', text: 'Leave empty if your database is called “(default)”. Otherwise type the ID you gave it in step 2.' })
+          ),
           U.h(
             'div',
             { class: 'form-row' },
@@ -357,7 +421,7 @@
       U.h(
         'div',
         { class: 'form-stack' },
-        U.h('p', { class: 'notice notice-ok', text: `Connected to Firebase project “${settings.cfg.projectId}”.` }),
+        U.h('p', { class: 'notice notice-ok', text: `Connected to Firebase project “${settings.cfg.projectId}”${settings.cfg.databaseId ? ` (database “${settings.cfg.databaseId}”)` : ''}.` }),
         U.h('p', { text: 'Creating a link uploads a copy of this storyboard (frames as you see them, with framing and arrows, plus the filled-in text and cover page). Anyone with the link can view it and comment. Nobody can find it without the link.' }),
         teamNameRow(settings),
         lastError ? U.h('p', { class: 'notice notice-warn', text: lastError }) : null,

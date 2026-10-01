@@ -510,7 +510,7 @@
   const MAGIC = 'STRYBRD1';
 
   /** Project files are a small binary container: magic, JSON length, JSON, then the raw image bytes. */
-  S.buildProjectFile = async function () {
+  S.buildProjectFile = async function (settings) {
     const parts = [];
     const index = [];
     let offset = 0;
@@ -522,7 +522,7 @@
       offset += im.blob.size;
     }
     const header = new TextEncoder().encode(
-      JSON.stringify({ app: 'storyboard-maker', formatVersion: 1, savedAt: new Date().toISOString(), project: S.project, images: index })
+      JSON.stringify({ app: 'storyboard-maker', formatVersion: 1, savedAt: new Date().toISOString(), project: S.project, settings: settings || null, images: index })
     );
     const len = new Uint8Array(4);
     new DataView(len.buffer).setUint32(0, header.length, true);
@@ -553,7 +553,7 @@
         console.warn('Skipping unreadable image in project file', m.id);
       }
     }
-    return { project, entries };
+    return { project, entries, settings: meta.settings && typeof meta.settings === 'object' ? meta.settings : null };
   };
 
   S.loadProject = async function (data) {

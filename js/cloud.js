@@ -27,13 +27,24 @@
     return apiKey && projectId ? { apiKey, projectId } : null;
   };
 
+  /**
+   * Firestore database IDs: '' means the project's "(default)" database. Returns the cleaned ID,
+   * '' for the default, or null if it isn't a valid ID.
+   */
+  C.normalizeDatabaseId = function (s) {
+    const v = String(s || '').trim().toLowerCase();
+    if (!v || v === '(default)' || v === 'default') return '';
+    return /^[a-z][a-z0-9-]{2,61}[a-z0-9]$/.test(v) ? v : null;
+  };
+
   /* ---------- Connection ---------- */
 
   const conns = new Map();
 
-  /** cfg: {apiKey, projectId, emulator?}. Signs in anonymously (the same browser keeps the same identity). */
+  /** cfg: {apiKey, projectId, databaseId?, emulator?}. Signs in anonymously (the same browser keeps the same identity). */
   C.connect = function (cfg) {
-    const key = [cfg.projectId, cfg.apiKey, cfg.emulator || ''].join('|');
+    const databaseId = C.normalizeDatabaseId(cfg.databaseId) || '';
+    const key = [cfg.projectId, cfg.apiKey, databaseId, cfg.emulator || ''].join('|');
     if (!conns.has(key)) {
       const p = (async () => {
         await U.loadScript(C.FIREBASE_SCRIPT);
@@ -42,7 +53,7 @@
         const app = F.initializeApp({ apiKey: cfg.apiKey, projectId: cfg.projectId, authDomain: cfg.projectId + '.firebaseapp.com' }, name);
         try {
           const auth = F.getAuth(app);
-          const db = F.initializeFirestore(app, {});
+          const db = F.initializeFirestore(app, {}, databaseId || '(default)');
           if (cfg.emulator) {
             F.connectAuthEmulator(auth, `http://${cfg.emulator}:9099`, { disableWarnings: true });
             F.connectFirestoreEmulator(db, cfg.emulator, 8080);
@@ -87,7 +98,7 @@
       return 'Firebase refused access. Make sure the security rules from this app are published (Firestore Database → Rules).';
     }
     if (/not-found|failed-precondition/.test(code) || /database .* does not exist/i.test(msg)) {
-      return 'No Firestore database found. In the Firebase console open Firestore Database and click “Create database”.';
+      return 'No Firestore database found. In the Firebase console open Databases & Storage → Firestore and add a database. If you gave it your own Database ID (anything other than “(default)”), type that ID in the Database ID box here.';
     }
     if (/Could not load/.test(msg)) return 'Couldn’t load the Firebase library (js/vendor/firebase.js).';
     return msg;
@@ -106,6 +117,7 @@
 
   C.reviewLink = function (base, cfg, reviewId) {
     const params = new URLSearchParams({ r: reviewId, p: cfg.projectId, k: cfg.apiKey });
+    if (cfg.databaseId) params.set('d', cfg.databaseId);
     if (cfg.emulator) params.set('emu', cfg.emulator);
     return base.split('#')[0] + '#' + params.toString();
   };
@@ -117,6 +129,8 @@
     const apiKey = params.get('k');
     if (!reviewId || !projectId || !apiKey) return null;
     const cfg = { projectId, apiKey };
+    const databaseId = C.normalizeDatabaseId(params.get('d'));
+    if (databaseId) cfg.databaseId = databaseId;
     if (params.get('emu')) cfg.emulator = params.get('emu');
     return { reviewId, cfg };
   };

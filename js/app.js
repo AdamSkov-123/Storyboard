@@ -61,7 +61,7 @@
     const name = U.safeFilename(S.project.title, 'storyboard') + '.storyboard';
     const progress = U.toast('Saving project…', { duration: 0 });
     try {
-      const blob = await S.buildProjectFile();
+      const blob = await S.buildProjectFile(SB.share.portableSettings());
       let savedTo = null;
       if (window.showSaveFilePicker && window.self === window.top) {
         try {
@@ -132,6 +132,9 @@
       fileHandle = handle;
       progress.close();
       U.toast(`Opened “${S.project.title || file.name}”`);
+      if (SB.share.adoptSettings(data.settings, S.project.review)) {
+        U.toast('Client link settings came with this project, so this browser is ready to create client links.', { duration: 7000 });
+      }
     } catch (e) {
       progress.close();
       console.error(e);
@@ -311,6 +314,7 @@
     SB.fieldsManager.init();
     SB.pdf.init();
     SB.share.init();
+    SB.share.adoptSettings(null, S.project.review);
     SB.feedback.init();
     initDragDrop();
     initKeyboard();
