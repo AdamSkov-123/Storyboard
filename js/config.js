@@ -10,8 +10,8 @@
  * Leave apiKey empty to set Firebase up in each browser instead (Client link → setup screen).
  */
 window.SB_FIREBASE_CONFIG = {
-  apiKey: '',
-  projectId: '',
+  apiKey: 'AIzaSyB7qJi3iY_U8qdwmylsem5_vJvE6Rjzt8o',
+  projectId: 'storyboard-82d10',
   // Leave empty if your Firestore database is called "(default)".
   databaseId: '',
 };
