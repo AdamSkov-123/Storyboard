@@ -16,11 +16,22 @@
 
   /* ---------- Settings (kept per browser) ---------- */
 
+  /** The Firebase project built into this copy of the app (js/config.js), or null. */
+  SH.builtIn = function () {
+    const c = window.SB_FIREBASE_CONFIG;
+    if (!c || !isToken(c.apiKey) || !isToken(c.projectId)) return null;
+    const cfg = { apiKey: c.apiKey, projectId: c.projectId };
+    const databaseId = C.normalizeDatabaseId(c.databaseId);
+    if (databaseId) cfg.databaseId = databaseId;
+    return cfg;
+  };
+
   SH.settings = function () {
     const emulator = U.storage.get('sb-emulator', '') || new URLSearchParams(location.search).get('emulator') || '';
-    const cfg = U.storage.get('sb-firebase-config', null);
+    const stored = U.storage.get('sb-firebase-config', null);
+    const cfg = SH.builtIn() || (stored && stored.apiKey ? stored : null);
     return {
-      cfg: cfg && cfg.apiKey ? Object.assign({}, cfg, emulator ? { emulator } : {}) : emulator ? { apiKey: 'demo-key', projectId: 'demo-storyboard', emulator } : null,
+      cfg: cfg ? Object.assign({}, cfg, emulator ? { emulator } : {}) : emulator ? { apiKey: 'demo-key', projectId: 'demo-storyboard', emulator } : null,
       reviewBase: U.storage.get('sb-review-base', '') || C.defaultReviewPage(),
       teamName: U.storage.get('sb-team-name', ''),
     };
@@ -28,7 +39,7 @@
 
   /** Settings saved inside project files so any computer that opens one is ready to create client links. */
   SH.portableSettings = function () {
-    const cfg = U.storage.get('sb-firebase-config', null);
+    const cfg = SH.builtIn() || U.storage.get('sb-firebase-config', null);
     if (!cfg || !cfg.apiKey || !cfg.projectId) return null;
     const out = { firebase: { apiKey: cfg.apiKey, projectId: cfg.projectId } };
     if (cfg.databaseId) out.firebase.databaseId = cfg.databaseId;
@@ -52,7 +63,7 @@
    */
   SH.adoptSettings = function (settings, review) {
     const current = U.storage.get('sb-firebase-config', null);
-    if (current && current.apiKey) return false;
+    if (SH.builtIn() || (current && current.apiKey)) return false;
     let fb = settings && settings.firebase;
     let base = settings && settings.reviewBase;
     if (!fb && review && review.apiKey && !review.emulator) {
@@ -84,12 +95,14 @@
   SH.teamLink = function () {
     const cfg = SH.settings().cfg;
     if (!cfg) return null;
+    if (SH.builtIn()) return SH.appAddress(); // already connected: just the app's address
     const params = new URLSearchParams({ team: '1', p: cfg.projectId, k: cfg.apiKey });
     if (cfg.databaseId) params.set('d', cfg.databaseId);
     if (cfg.emulator) params.set('emu', cfg.emulator);
-    const base = new URL('./', SH.settings().reviewBase).href;
-    return base + '#' + params.toString();
+    return SH.appAddress() + '#' + params.toString();
   };
+
+  SH.appAddress = () => new URL('./', SH.settings().reviewBase).href;
 
   /**
    * Read a team link (#team=1&p=…&k=…&d=…). Returns null if the hash isn't one, otherwise
@@ -99,6 +112,7 @@
   SH.readTeamLink = function (hash) {
     const params = new URLSearchParams(String(hash || '').replace(/^#/, ''));
     if (params.get('team') !== '1') return null;
+    if (SH.builtIn()) return { status: 'builtin' }; // this copy is already connected
     const projectId = params.get('p');
     const apiKey = params.get('k');
     const databaseId = C.normalizeDatabaseId(params.get('d'));
@@ -361,7 +375,7 @@
     const foot = $('share-foot');
     const settings = SH.settings();
     const review = S.project.review;
-    const showSetup = mode.setup || (!review && !settings.cfg);
+    const showSetup = !SH.builtIn() && (mode.setup || (!review && !settings.cfg));
     $('share-h').textContent = mode.home ? 'Connect Firebase' : 'Client review link';
     $('share-h').nextElementSibling.textContent = mode.home
       ? 'Team storyboards are kept in your own free Firebase project, the same one client links use.'
@@ -510,7 +524,7 @@
         U.h('p', { text: 'Creating a link uploads a copy of this storyboard (frames as you see them, with framing and arrows, plus the filled-in text and cover page). Anyone with the link can view it and comment. Nobody can find it without the link.' }),
         teamNameRow(settings),
         lastError ? U.h('p', { class: 'notice notice-warn', text: lastError }) : null,
-        U.h('button', { type: 'button', class: 'link-btn', text: 'Change Firebase settings…', onclick: () => SH.open({ setup: true }) })
+        SH.builtIn() ? null : U.h('button', { type: 'button', class: 'link-btn', text: 'Change Firebase settings…', onclick: () => SH.open({ setup: true }) })
       )
     );
     const create = U.h('button', { type: 'button', class: 'btn btn-primary', html: U.icon('link', 16) + '<span>Create client link</span>' });
@@ -525,6 +539,17 @@
     if (S.readOnly) {
       body.append(U.h('p', { class: 'notice', text: 'Only the person editing this storyboard can create its client link.' }));
       foot.append(closeBtn());
+      return;
+    }
+    if (!SB.team.isMember()) {
+      // The security rules only let team members create links (so nobody else can use up the free storage).
+      body.append(
+        U.h(
+          'p',
+          { class: 'notice notice-warn', text: SB.team.status === 'no-team' ? 'Set up your team on the home page first: only team members can create client links.' : 'Only team members can create client links. Sign in with Google on the home page first.' }
+        )
+      );
+      foot.append(closeBtn(), U.h('button', { type: 'button', class: 'btn btn-primary', text: 'Go to home page', onclick: () => (dlg.close(), SB.app.goHome()) }));
       return;
     }
     foot.append(closeBtn(), create);
@@ -575,7 +600,7 @@
             { class: 'stack-sm' },
             U.h('p', { class: 'muted small', text: `Stored in Firebase project “${review.projectId}”. Comments stay attached to frames when you reorder or update them.` }),
             U.h('button', { type: 'button', class: 'btn btn-ghost btn-sm danger', text: 'Stop sharing and delete comments…', onclick: () => SH.stopSharing() }),
-            U.h('button', { type: 'button', class: 'link-btn', text: 'Change Firebase settings for new links…', onclick: () => SH.open({ setup: true }) })
+            SH.builtIn() ? null : U.h('button', { type: 'button', class: 'link-btn', text: 'Change Firebase settings for new links…', onclick: () => SH.open({ setup: true }) })
           )
         )
       )

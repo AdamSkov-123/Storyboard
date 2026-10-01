@@ -14,18 +14,20 @@
   const MAX_IMAGE_BYTES = 900 * 1000; // one Firestore document holds at most 1 MiB
   const SESSION = U.randomKey(8); // this tab; one person's two tabs or computers mustn't both edit
 
-  T.status = 'off'; // off | loading | signed-out | no-team | not-approved | member | error
+  T.status = 'off'; // off | loading | signed-out | no-team | not-approved | removed | member | error
   T.user = null; // {uid, email, name, photo}
   T.role = null; // 'admin' | 'member'
   T.boards = []; // team storyboards (board documents)
   T.members = [];
   T.teamName = '';
+  T.domain = ''; // people with Google accounts at this domain join without approval ('' = off)
   T.error = '';
   T.cloudState = ''; // '', 'saving', 'saved', 'offline', 'error'
 
   let conn = null;
   let unsubBoards = null;
   let unsubMembers = null;
+  let unsubMe = null; // own member document, to notice being removed straight away
   let session = null; // the open team storyboard: {id, editing, rev, sizes: Map, dirty, timer, unsubData, idle, createdHere}
   let readyResolve;
   T.ready = new Promise((r) => (readyResolve = r));
@@ -64,7 +66,7 @@
       return 'Google sign-in is turned off. In Firebase open Security → Authentication → Sign-in method and enable Google.';
     }
     if (code === 'permission-denied') {
-      return 'Firebase refused access. Publish the latest security rules from this app (Client link → More options → Change Firebase settings → Copy rules).';
+      return 'Firebase refused access. The security rules in Firebase may be out of date: copy this app’s latest rules (Copy security rules), paste them in Firebase → Firestore → Rules and click Publish.';
     }
     return C.explainError(e);
   };
@@ -101,17 +103,34 @@
     changed();
     const { F, db } = conn;
     try {
-      const m = await F.getDoc(F.doc(db, 'members', T.user.email));
-      if (m.exists()) {
-        T.role = m.data().role;
-        const team = await F.getDoc(F.doc(db, 'team', 'settings')).catch(() => null);
-        T.teamName = (team && team.exists() && team.data().name) || '';
+      const memberRef = F.doc(db, 'members', T.user.email);
+      const [m, team] = await Promise.all([F.getDoc(memberRef), F.getDoc(F.doc(db, 'team', 'settings'))]);
+      const settings = team.exists() ? team.data() : {};
+      T.teamName = settings.name || '';
+      T.domain = settings.domain || '';
+      let role = m.exists() ? m.data().role : null;
+      if (!role && team.exists() && T.domain && emailDomain(T.user.email) === T.domain) {
+        // Same organisation as the team: join without waiting for an admin.
+        await F.setDoc(memberRef, { email: T.user.email, role: 'member', name: T.user.name || '', addedBy: T.user.email, addedAt: F.serverTimestamp() });
+        role = 'member';
+        U.toast(`Welcome to ${T.teamName || 'the team'}! You joined with your @${T.domain} account.`, { duration: 7000 });
+      }
+      if (role === 'admin' || role === 'member') {
+        T.role = role;
         T.status = 'member';
         watchBoards();
+        watchMe(memberRef);
         return;
       }
-      const team = await F.getDoc(F.doc(db, 'team', 'settings'));
-      T.status = team.exists() ? 'not-approved' : 'no-team';
+      const wasMember = !!session || S.listProjects().some((r) => r.team);
+      stopWatching();
+      T.boards = [];
+      T.members = [];
+      if (wasMember) {
+        await purgeTeamCopies();
+        U.toast(`You no longer have access to ${T.teamName || 'the team’s storyboards'}.`, { type: 'error', duration: 9000 });
+      }
+      T.status = role === 'removed' ? 'removed' : team.exists() ? 'not-approved' : 'no-team';
     } catch (e) {
       console.error(e);
       T.status = 'error';
@@ -171,20 +190,31 @@
     if (session) await SB.app.go(null);
     stopWatching();
     // Team storyboards cached on this computer go too, so the next person here can't see them.
-    for (const r of S.listProjects()) if (r.team) await S.forgetProject(r.id);
-    S.gcImages();
+    await purgeTeamCopies();
     if (conn) await conn.F.signOut(conn.auth).catch(() => {});
     T.user = null;
     T.role = null;
     T.boards = [];
+    T.members = [];
+    T.teamName = '';
+    T.domain = '';
     T.status = 'signed-out';
     changed();
   };
 
-  T.setupTeam = async function (name) {
+  const emailDomain = (email) => String(email || '').split('@').pop().toLowerCase();
+  // Anyone can get an address at these, so they can't be a team's domain.
+  const PUBLIC_DOMAINS = ['gmail.com', 'googlemail.com', 'outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'yahoo.com', 'ymail.com', 'icloud.com', 'me.com', 'mac.com', 'aol.com', 'proton.me', 'protonmail.com', 'gmx.com', 'gmx.de', 'web.de', 'mail.com', 'zoho.com', 'yandex.com', 'yandex.ru', 'qq.com', '163.com'];
+  T.isPublicDomain = (d) => PUBLIC_DOMAINS.includes(String(d || '').toLowerCase());
+  /** The domain of the signed-in person's email, if it's an organisation's (not gmail.com etc.). */
+  T.myDomain = () => (T.user && !T.isPublicDomain(emailDomain(T.user.email)) ? emailDomain(T.user.email) : '');
+
+  T.setupTeam = async function (name, domain) {
     const { F, db } = conn;
     const batch = F.writeBatch(db);
-    batch.set(F.doc(db, 'team', 'settings'), { name: name || 'Our team', createdBy: T.user.uid, createdAt: F.serverTimestamp() });
+    const settings = { name: name || 'Our team', createdBy: T.user.uid, createdAt: F.serverTimestamp() };
+    if (domain) settings.domain = domain;
+    batch.set(F.doc(db, 'team', 'settings'), settings);
     batch.set(F.doc(db, 'members', T.user.email), { email: T.user.email, role: 'admin', name: T.user.name || '', addedBy: T.user.email, addedAt: F.serverTimestamp() });
     await batch.commit();
     await loadMembership();
@@ -193,7 +223,37 @@
   function stopWatching() {
     if (unsubBoards) unsubBoards();
     if (unsubMembers) unsubMembers();
-    unsubBoards = unsubMembers = null;
+    if (unsubMe) unsubMe();
+    unsubBoards = unsubMembers = unsubMe = null;
+  }
+
+  function watchMe(ref) {
+    if (unsubMe) return;
+    unsubMe = conn.F.onSnapshot(
+      ref,
+      (snap) => {
+        const role = snap.exists() ? snap.data().role : null;
+        if (role === T.role) return;
+        if (role === 'admin' || role === 'member') {
+          T.role = role;
+          changed();
+        } else {
+          unsubMe = null;
+          loadMembership(); // removed from the team
+        }
+      },
+      () => (unsubMe = null)
+    );
+  }
+
+  /** Team storyboards cached on this computer go when someone signs out or loses access. */
+  async function purgeTeamCopies() {
+    if (session) {
+      endSession();
+      await SB.app.go(null);
+    }
+    for (const r of S.listProjects()) if (r.team) await S.forgetProject(r.id);
+    S.gcImages();
   }
 
   function watchBoards() {
@@ -209,6 +269,12 @@
       },
       (e) => {
         console.error(e);
+        unsubBoards = null;
+        // Most likely removed from the team while signed in: find out.
+        if (e.code === 'permission-denied' && conn.auth.currentUser) {
+          loadMembership();
+          return;
+        }
         T.status = 'error';
         T.error = T.explain(e);
         readyResolve();
@@ -222,10 +288,26 @@
   T.watchMembers = function () {
     if (unsubMembers || !T.isMember()) return;
     const { F, db } = conn;
-    unsubMembers = F.onSnapshot(F.collection(db, 'members'), (snap) => {
-      T.members = snap.docs.map((d) => d.data()).sort((a, b) => U.naturalCompare(a.email, b.email));
-      changed();
-    });
+    unsubMembers = F.onSnapshot(
+      F.collection(db, 'members'),
+      (snap) => {
+        T.members = snap.docs.map((d) => d.data()).sort((a, b) => U.naturalCompare(a.email, b.email));
+        const me = T.members.find((m) => T.user && m.email === T.user.email);
+        if (me && (me.role === 'admin' || me.role === 'member')) T.role = me.role;
+        changed();
+      },
+      () => (unsubMembers = null)
+    );
+  };
+
+  T.domainRe = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/;
+  T.setDomain = async function (domain) {
+    domain = String(domain || '').trim().toLowerCase().replace(/^@/, '');
+    if (domain && !T.domainRe.test(domain)) throw new Error('That doesn’t look like a domain. Type just the part after the @, like yourcompany.com.');
+    if (T.isPublicDomain(domain)) throw new Error(`Anyone can get an @${domain} address, so it can’t be used to join automatically.`);
+    await conn.F.updateDoc(conn.F.doc(conn.db, 'team', 'settings'), { domain: domain || conn.F.deleteField() });
+    T.domain = domain;
+    changed();
   };
 
   const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -236,7 +318,11 @@
     await F.setDoc(F.doc(db, 'members', email), { email, role: role === 'admin' ? 'admin' : 'member', name: '', addedBy: T.user.email, addedAt: F.serverTimestamp() });
   };
   T.setRole = (email, role) => conn.F.updateDoc(conn.F.doc(conn.db, 'members', email), { role });
-  T.removeMember = (email) => conn.F.deleteDoc(conn.F.doc(conn.db, 'members', email));
+  /** People at the team's domain are marked removed instead (otherwise they could just join again). */
+  T.removeMember = (email) =>
+    [T.domain, T.myDomain()].includes(emailDomain(email)) && emailDomain(email)
+      ? conn.F.updateDoc(conn.F.doc(conn.db, 'members', email), { role: 'removed' })
+      : conn.F.deleteDoc(conn.F.doc(conn.db, 'members', email));
 
   /* ---------- Locks ---------- */
 
@@ -830,41 +916,90 @@
 
   /* ---------- Team members dialog ---------- */
 
+  T.copyRules = async function () {
+    U.toast((await U.copyText(SB.FIRESTORE_RULES)) ? 'Rules copied. In Firebase open Firestore → Rules, replace everything with them and click Publish.' : 'Copy failed. The rules are in firestore.rules in the app’s files.', { duration: 9000 });
+  };
+
   T.copyLink = async function () {
     const link = SB.share.teamLink();
     if (!link) return;
-    U.toast((await U.copyText(link)) ? 'Team link copied. Teammates open it, sign in with Google, then an admin approves them.' : 'Couldn’t copy the link', { duration: 7000 });
+    const next = T.domain ? `sign in with their @${T.domain} Google account` : 'sign in with Google, then an admin approves them';
+    U.toast((await U.copyText(link)) ? `Link copied. Teammates open it and ${next}.` : 'Couldn’t copy the link', { duration: 7000 });
   };
 
   T.openMembers = function () {
     T.watchMembers();
+    const admin = T.isAdmin();
     const dlg = U.h('dialog', { class: 'modal' });
     const list = U.h('ul', { class: 'member-list' });
-    const body = U.h(
-      'div',
-      { class: 'modal-body' },
-      U.h('p', { class: 'muted small', text: T.isAdmin() ? 'Approve teammates by adding the email address they sign in to Google with. They can then see and edit all team storyboards. Admins can also approve and remove people.' : 'People who can see and edit the team’s storyboards. Ask an admin to add someone.' })
-    );
+    const removedList = U.h('ul', { class: 'member-list' });
+    const removedRow = U.h('div', { class: 'form-row member-approve', hidden: true }, U.h('label', { text: 'Removed' }), removedList);
+    const body = U.h('div', { class: 'modal-body' }, U.h('p', { class: 'muted small', text: 'Everyone on the team can see and edit all team storyboards, on any computer.' }));
+
+    // Joining automatically by email domain
+    const joinNote = U.h('span', { class: 'muted small' });
+    if (admin) {
+      const check = U.h('input', { type: 'checkbox', checked: !!T.domain, 'aria-label': 'Let people at this domain join automatically' });
+      const domain = U.h('input', { class: 'input input-sm', type: 'text', value: T.domain || T.myDomain(), placeholder: 'yourcompany.com', 'aria-label': 'Domain', autocomplete: 'off', spellcheck: 'false' });
+      const save = async () => {
+        const want = check.checked ? domain.value : '';
+        if (want.trim().toLowerCase().replace(/^@/, '') === T.domain) return;
+        try {
+          await T.setDomain(want);
+          U.toast(T.domain ? `Anyone with an @${T.domain} Google account can now join.` : 'Automatic joining is off. You’ll approve everyone yourself.');
+        } catch (err) {
+          check.checked = !!T.domain;
+          U.toast(err.code ? T.explain(err) : err.message, { type: 'error', duration: 8000 });
+        }
+        domain.value = T.domain || domain.value;
+      };
+      check.addEventListener('change', () => {
+        if (check.checked && !domain.value.trim()) {
+          domain.focus();
+          return;
+        }
+        save();
+      });
+      domain.addEventListener('change', () => check.checked && save());
+      domain.addEventListener('keydown', (e) => e.key === 'Enter' && (check.checked = true, save()));
+      body.append(
+        U.h(
+          'div',
+          { class: 'form-row member-approve' },
+          U.h('label', { text: 'Join automatically' }),
+          U.h('label', { class: 'join-domain' }, check, U.h('span', { text: 'Anyone with a Google account at @' }), domain),
+          joinNote
+        )
+      );
+    } else if (T.domain) {
+      body.append(U.h('p', { class: 'muted small', text: `Anyone with an @${T.domain} Google account joins automatically when they sign in.` }));
+    }
+
+    // Link to send teammates
     const link = SB.share.teamLink();
+    const linkNote = U.h('span', { class: 'muted small' });
     if (link) {
       body.append(
         U.h(
           'div',
-          { class: 'form-row' },
-          U.h('label', { text: 'Team link' }),
+          { class: 'form-row member-approve' },
+          U.h('label', { text: 'Link for teammates' }),
           U.h(
             'div',
             { class: 'link-box' },
-            U.h('input', { class: 'input', type: 'text', readonly: true, value: link, 'aria-label': 'Team link', onfocus: (e) => e.target.select() }),
+            U.h('input', { class: 'input', type: 'text', readonly: true, value: link, 'aria-label': 'Link for teammates', onfocus: (e) => e.target.select() }),
             U.h('button', { type: 'button', class: 'btn btn-ghost', html: U.icon('copy', 15) + '<span>Copy</span>', onclick: () => T.copyLink() })
           ),
-          U.h('span', { class: 'muted small', text: T.isAdmin() ? 'Send this to teammates. It sets up the app on their computer. Then they sign in with Google, and you approve their email below.' : 'Send this to teammates. It sets up the app on their computer. Then they sign in with Google, and an admin approves them.' })
+          linkNote
         )
       );
     }
-    if (T.isAdmin()) {
+
+    // Approving people by email
+    const addLabel = U.h('label');
+    if (admin) {
       // Built once, so live updates to the list never clear what's being typed.
-      const email = U.h('input', { class: 'input', type: 'email', placeholder: 'teammate@gmail.com', 'aria-label': 'Email to approve' });
+      const email = U.h('input', { class: 'input', type: 'email', placeholder: 'name@example.com', 'aria-label': 'Email to approve' });
       const role = U.h('select', { class: 'input', 'aria-label': 'Role' }, U.h('option', { value: 'member', text: 'Member' }), U.h('option', { value: 'admin', text: 'Admin' }));
       const add = U.h('button', { type: 'button', class: 'btn btn-primary', text: 'Approve' });
       const submit = async () => {
@@ -881,47 +1016,77 @@
       };
       add.addEventListener('click', submit);
       email.addEventListener('keydown', (e) => e.key === 'Enter' && submit());
-      body.append(U.h('div', { class: 'form-row member-approve' }, U.h('label', { text: 'Approve a teammate' }), U.h('div', { class: 'member-add' }, email, role, add)));
+      body.append(U.h('div', { class: 'form-row member-approve' }, addLabel, U.h('div', { class: 'member-add' }, email, role, add)));
     }
-    body.append(U.h('div', { class: 'form-row member-approve' }, U.h('label', { text: 'Members' }), list));
+    body.append(U.h('div', { class: 'form-row member-approve' }, U.h('label', { text: 'Members' }), list), removedRow);
+
+    const errToast = (err) => U.toast(T.explain(err), { type: 'error' });
+    const row = (m, controls) =>
+      U.h(
+        'li',
+        { class: 'member-row' + (m.role === 'removed' ? ' is-removed' : '') },
+        U.h('div', { class: 'avatar', style: `background:${U.avatarColor(m.email)}`, text: U.initials(m.name || m.email) }),
+        U.h('div', { class: 'member-email' }, U.h('span', { text: m.email }), T.user && m.email === T.user.email ? U.h('span', { class: 'muted small', text: ' (you)' }) : null),
+        ...controls
+      );
     let lastSig = '';
-    const renderList = () => {
-      const sig = JSON.stringify(T.members) + T.role;
+    const renderAll = () => {
+      // Texts that depend on the team's domain setting
+      const d = T.domain;
+      joinNote.textContent = d ? `They’re in as soon as they sign in. Untick this to approve everyone yourself.` : 'Off: you approve everyone yourself.';
+      if (SB.share.builtIn()) {
+        linkNote.textContent = d ? `Send this to teammates. They sign in with their @${d} Google account and they’re in.` : `Send this to teammates. They sign in with Google, then ${admin ? 'you approve their email below' : 'an admin approves them'}.`;
+      } else {
+        linkNote.textContent = `Send this to teammates. It sets up the app on their computer. Then they sign in with Google${d ? ` (with an @${d} account they’re in right away)` : `, and ${admin ? 'you approve their email below' : 'an admin approves them'}`}.`;
+      }
+      addLabel.textContent = d ? `Approve someone from outside @${d}` : 'Approve a teammate';
+
+      const sig = JSON.stringify(T.members) + T.role + d;
       if (sig === lastSig) return;
       lastSig = sig;
       list.replaceChildren();
+      removedList.replaceChildren();
       for (const m of T.members) {
         const me = T.user && m.email === T.user.email;
-        const role = T.isAdmin() && !me
-          ? U.h('select', { class: 'input input-sm', 'aria-label': `Role for ${m.email}`, onchange: (e) => T.setRole(m.email, e.target.value).catch((err) => U.toast(T.explain(err), { type: 'error' })) }, U.h('option', { value: 'member', text: 'Member', selected: m.role !== 'admin' }), U.h('option', { value: 'admin', text: 'Admin', selected: m.role === 'admin' }))
-          : U.h('span', { class: 'muted small', text: m.role === 'admin' ? 'Admin' : 'Member' });
-        list.append(
-          U.h(
-            'li',
-            { class: 'member-row' },
-            U.h('div', { class: 'avatar', style: `background:${U.avatarColor(m.email)}`, text: U.initials(m.name || m.email) }),
-            U.h('div', { class: 'member-email' }, U.h('span', { text: m.email }), me ? U.h('span', { class: 'muted small', text: ' (you)' }) : null),
-            role,
-            T.isAdmin() && !me
-              ? U.h('button', {
-                  type: 'button',
-                  class: 'icon-btn icon-btn-sm danger',
-                  title: 'Remove',
-                  'aria-label': `Remove ${m.email}`,
-                  html: U.icon('trash', 16),
-                  onclick: async () => {
-                    if (await U.confirm(`Remove ${m.email}?`, 'They’ll no longer be able to see or edit team storyboards.', 'Remove', true)) T.removeMember(m.email).catch((err) => U.toast(T.explain(err), { type: 'error' }));
-                  },
-                })
-              : U.h('span')
-          )
-        );
+        if (m.role === 'removed') {
+          if (admin) removedList.append(row(m, [U.h('span', { class: 'muted small', text: 'No access' }), U.h('button', { type: 'button', class: 'btn btn-ghost btn-sm', text: 'Restore', onclick: () => T.setRole(m.email, 'member').catch(errToast) })]));
+          continue;
+        }
+        const role =
+          admin && !me
+            ? U.h('select', { class: 'input input-sm', 'aria-label': `Role for ${m.email}`, onchange: (e) => T.setRole(m.email, e.target.value).catch(errToast) }, U.h('option', { value: 'member', text: 'Member', selected: m.role !== 'admin' }), U.h('option', { value: 'admin', text: 'Admin', selected: m.role === 'admin' }))
+            : U.h('span', { class: 'muted small', text: m.role === 'admin' ? 'Admin' : 'Member' });
+        const remove =
+          admin && !me
+            ? U.h('button', {
+                type: 'button',
+                class: 'icon-btn icon-btn-sm danger',
+                title: 'Remove',
+                'aria-label': `Remove ${m.email}`,
+                html: U.icon('trash', 16),
+                onclick: async () => {
+                  if (await U.confirm(`Remove ${m.email}?`, 'They’ll no longer be able to see or edit team storyboards.', 'Remove', true)) T.removeMember(m.email).catch(errToast);
+                },
+              })
+            : U.h('span');
+        list.append(row(m, [role, remove]));
       }
-      if (!T.members.length) list.append(U.h('li', { class: 'muted small', text: 'Loading…' }));
+      if (!list.children.length) list.append(U.h('li', { class: 'muted small', text: 'Loading…' }));
+      removedRow.hidden = !removedList.children.length;
     };
-    const unsub = T.subscribe(renderList);
-    renderList();
-    dlg.append(U.h('div', { class: 'modal-head' }, U.h('h2', { text: T.teamName ? `Team members · ${T.teamName}` : 'Team members' })), body, U.h('div', { class: 'modal-foot' }, U.h('button', { type: 'button', class: 'btn btn-primary', text: 'Done', onclick: () => dlg.close() })));
+    const unsub = T.subscribe(renderAll);
+    renderAll();
+    dlg.append(
+      U.h('div', { class: 'modal-head' }, U.h('h2', { text: T.teamName ? `Team members · ${T.teamName}` : 'Team members' })),
+      body,
+      U.h(
+        'div',
+        { class: 'modal-foot' },
+        admin ? U.h('button', { type: 'button', class: 'link-btn', text: 'Copy security rules', title: 'To paste in Firebase → Firestore → Rules after updating the app', onclick: () => T.copyRules() }) : null,
+        U.h('span', { class: 'spacer' }),
+        U.h('button', { type: 'button', class: 'btn btn-primary', text: 'Done', onclick: () => dlg.close() })
+      )
+    );
     dlg.addEventListener('close', () => {
       unsub();
       dlg.remove();

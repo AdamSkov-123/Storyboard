@@ -231,7 +231,7 @@
       case 'signed-out':
         return card(
           'Work on storyboards as a team',
-          'Sign in with Google to see and edit your team’s storyboards on any computer. Your teammates need to be approved by a team admin.',
+          'Sign in with your Google account to see and edit your team’s storyboards on any computer.',
           U.h('button', { type: 'button', class: 'btn btn-primary google-btn', dataset: { act: 'signin' }, html: GOOGLE_G + '<span>Sign in with Google</span>' })
         );
       case 'no-team':
@@ -244,12 +244,27 @@
       case 'not-approved':
         return card(
           'Waiting for approval',
-          `You’re signed in as ${team.user.email}, but this email hasn’t been approved yet. Ask a team admin to add it under Team members, then reload this page.`,
+          team.domain
+            ? `You’re signed in as ${team.user.email}, which isn’t part of the team. People with @${team.domain} Google accounts join automatically. If that’s you, sign out and sign in with that account. Otherwise, ask a team admin to approve this email under Team members.`
+            : `You’re signed in as ${team.user.email}, but this email hasn’t been approved yet. Ask a team admin to add it under Team members, then click Check again.`,
+          U.h('button', { type: 'button', class: 'btn btn-ghost', dataset: { act: 'recheck' }, text: 'Check again' }),
+          U.h('button', { type: 'button', class: 'btn btn-ghost', dataset: { act: 'signout' }, text: 'Sign out' })
+        );
+      case 'removed':
+        return card(
+          'No access to the team',
+          `${team.user.email} was removed from ${team.teamName || 'the team'}. If that’s a mistake, ask a team admin to restore you under Team members.`,
           U.h('button', { type: 'button', class: 'btn btn-ghost', dataset: { act: 'recheck' }, text: 'Check again' }),
           U.h('button', { type: 'button', class: 'btn btn-ghost', dataset: { act: 'signout' }, text: 'Sign out' })
         );
       case 'error':
-        return U.h('div', { class: 'team-card' }, U.h('div', {}, U.h('h3', { text: 'Couldn’t load team storyboards' }), U.h('p', { class: 'notice notice-warn', text: team.error })), U.h('button', { type: 'button', class: 'btn btn-ghost', dataset: { act: 'recheck' }, text: 'Try again' }));
+        return U.h(
+          'div',
+          { class: 'team-card' },
+          U.h('div', {}, U.h('h3', { text: 'Couldn’t load team storyboards' }), U.h('p', { class: 'notice notice-warn', text: team.error })),
+          /security rules/.test(team.error) ? U.h('button', { type: 'button', class: 'btn btn-ghost', text: 'Copy security rules', onclick: () => team.copyRules() }) : null,
+          U.h('button', { type: 'button', class: 'btn btn-ghost', dataset: { act: 'recheck' }, text: 'Try again' })
+        );
       default:
         return null;
     }
@@ -390,7 +405,7 @@
       { class: 'menu-pop home-menu', role: 'menu' },
       U.h('div', { class: 'account-email', text: `Signed in as ${team.user.email}` + (team.isAdmin() ? ' (admin)' : '') }),
       team.isMember() ? U.h('button', { type: 'button', role: 'menuitem', dataset: { menu: 'members' }, text: team.isAdmin() ? 'Team members & approvals…' : 'Team members…' }) : null,
-      U.h('button', { type: 'button', role: 'menuitem', dataset: { menu: 'link' }, text: 'Copy team link' }),
+      U.h('button', { type: 'button', role: 'menuitem', dataset: { menu: 'link' }, text: 'Copy link for teammates' }),
       U.h('div', { class: 'menu-sep' }),
       U.h('button', { type: 'button', role: 'menuitem', dataset: { menu: 'signout' }, text: 'Sign out' })
     );
@@ -502,9 +517,12 @@
   }
 
   async function setupTeam() {
+    const domain = T().myDomain();
     const r = await U.choose({
       title: 'Set up your team',
-      message: 'Give your team a name. You’ll be its admin, and you can approve teammates by email afterwards.',
+      message: domain
+        ? `Give your team a name. You’ll be its admin. Anyone with an @${domain} Google account will be able to join just by signing in, and you can approve other people by email. You can change this under Team members.`
+        : 'Give your team a name. You’ll be its admin, and you can approve teammates by email afterwards.',
       input: { placeholder: 'e.g. Northlight Films', maxlength: 60 },
       buttons: [
         { id: 'cancel', label: 'Cancel' },
@@ -513,8 +531,8 @@
     });
     if (!r || r.id !== 'ok') return;
     try {
-      await T().setupTeam(r.value.trim());
-      U.toast('Team created. Add teammates from your account menu → Team members.', { duration: 8000 });
+      await T().setupTeam(r.value.trim(), domain);
+      U.toast(domain ? `Team created. Teammates with @${domain} accounts can sign in now.` : 'Team created. Add teammates from your account menu → Team members.', { duration: 8000 });
     } catch (e) {
       console.error(e);
       U.toast('Couldn’t set up the team: ' + T().explain(e), { type: 'error', duration: 9000 });

@@ -29,14 +29,14 @@ Nothing to install and no build step. It's plain HTML, CSS and JavaScript.
 - Everything **autosaves in your browser** as you work. A new storyboard you leave without adding anything is discarded.
 - *File → Save project* (or ⋯ → *Save project file* on the home page) writes a `.storyboard` file containing your images, text, framing and arrows. Use it to back up, move to another computer, or hand off to a colleague. *Open project file* (or dropping the file onto the page) adds it to your storyboards. If you already have that storyboard, you can replace it or keep both.
 
-**Team storyboards** (optional, see [the setup below](#setting-up-team-storyboards-one-time-about-5-minutes))
-- **Sign in with Google** to keep storyboards online and open them on any computer. A team admin approves who can sign in, and nobody else can see the team's storyboards.
+**Team storyboards** (see [the setup below](#setting-up-firebase-one-time-about-15-minutes))
+- **Sign in with Google** to keep storyboards online and open them on any computer. Anyone with a Google account at your company's domain (for example @9milesmedia.com) can join just by signing in; an admin approves anyone else. Nobody outside the team can see its storyboards.
 - The home page shows **Team storyboards** (shared) and **On this computer only**. Use ⋯ → *Move to team* (or *Move all to team*) to share ones you already have. While you're signed in, new storyboards are team storyboards.
 - **One editor at a time.** If someone else is editing a storyboard, you can still open it **view only**: a banner says who's editing, and their changes appear live. Home page cards show who's editing. If they've walked away, you can **Take over**; anything of theirs that hadn't saved yet is kept as a copy. Editors who are idle for 20 minutes are switched to viewing, so nothing stays locked all day.
 - Changes **save to the team automatically** a moment after you make them (the top bar shows *Saving…* / *Saved to team*). If your connection drops, your work stays on this computer and uploads when you're back online or next open it.
 - A **storage bar** shows how much of the free plan's **1 GB** is used (by team storyboards and client links together) and roughly how many more frames fit. It turns amber at 80% and red at 95%.
 
-**Client review links** (optional, see the setup below)
+**Client review links** (see the setup below)
 - *Client link* uploads a copy of the storyboard and gives you a link to send. Clients open it in any browser with **no account**. They type their name once and the browser remembers it.
 - Clients choose how to **view** the storyboard: **one frame at a time** (a slideshow with *Previous*/*Next*, arrow keys, and a filmstrip of numbered thumbnails showing which frames have comments) or **1, 2, 3 or 4 frames per row**. Links open one frame at a time to start with; after that, each client's choice is remembered on their device. Large frames show their text beside the image.
 - Clients **click anywhere** to pin a comment: on an image, on a piece of text, on the cover or the page. They can **suggest edits** to any text, including filling in empty fields. They can **edit or delete their own comments**, and anyone can **reply**, so feedback becomes a conversation as in frame.io. Everyone with the link sees all comments, live.
@@ -49,10 +49,10 @@ Nothing to install and no build step. It's plain HTML, CSS and JavaScript.
 1. Download this repository (green **Code** button → **Download ZIP**) and unzip it.
 2. Double-click `index.html`. It opens in your browser.
 
-Chrome, Edge, Safari and Firefox all work. On Chrome and Edge, *Save project* lets you choose where the file goes and later saves to the same file. Other browsers download it.
+Chrome, Edge, Safari and Firefox all work. On Chrome and Edge, *Save project* lets you choose where the file goes and later saves to the same file. Other browsers download it. Google sign-in doesn't work from a file on your computer, so team storyboards and client links need Option B.
 
 ### Option B: use it as a website (GitHub Pages)
-This also hosts the page your clients open, so you need it for client links.
+This also hosts the page your clients open, so you need it for team storyboards and client links.
 
 1. On GitHub, open this repository's **Settings → Pages**.
 2. Under **Build and deployment**, set **Source** to **Deploy from a branch**, choose the branch with this code (for example `main`) and the **/ (root)** folder, then **Save**.
@@ -60,47 +60,44 @@ This also hosts the page your clients open, so you need it for client links.
 
 > Storyboards are saved per browser *and* per address, so storyboards made in the downloaded copy don't appear in the hosted copy, and vice versa. Use *Save project file* and *Open project file* to move one between them.
 
-## Setting up client review links (one time, about 10 minutes)
+## Setting up Firebase (one time, about 15 minutes)
 
-Client links need somewhere online to keep the storyboard and comments. They live in **your own free Firebase project** (Google). Only you set this up; clients never need an account.
+Team storyboards and client links are kept in **your own free Firebase project** (Google). One person sets this up. Teammates then just sign in, and clients never need an account.
 
 1. Go to [console.firebase.google.com](https://console.firebase.google.com/), sign in with a Google account and click **Create a project**. Any name works, and you can turn Google Analytics off. The free **Spark** plan is all you need, with no credit card.
 2. In the left menu open **Databases & Storage → Firestore** and click **Add database**. (Older consoles call it **Build → Firestore Database → Create database**.)
    - Choose **Standard edition**.
-   - **Database ID:** keep `(default)` if it's offered. If you type your own ID (for example `storyboards`), you'll enter the same ID in the app in step 6.
+   - **Database ID:** keep `(default)` if it's offered. If you type your own ID (for example `storyboards`), you'll need it again in step 6.
    - Pick a location near you, choose **Production mode**, and click **Create**.
-3. When the database is ready, open its **Rules** tab, replace everything with the contents of [`firestore.rules`](firestore.rules) (the app's setup screen has a *Copy rules* button), and click **Publish**.
-4. In the left menu open **Security → Authentication** (older consoles: **Build → Authentication**) and click **Get started** if you see it. On the **Sign-in method** tab, enable **Anonymous** and save. (For team storyboards you'll also enable **Google**; see below.)
-5. Open **Project settings** (gear icon next to *Project Overview*) → **Your apps** → the **`</>`** (Web) button. Register an app with any nickname (you don't need Firebase Hosting) and copy the `firebaseConfig` code it shows.
-6. In Storyboard Maker click **Client link** and paste the config. If you gave your database its own ID in step 2, type it in **Database ID** (otherwise leave that box empty). Check the **Review page address** (your GitHub Pages address from Option B, ending in `review.html`) and click **Connect**.
+3. When the database is ready, open its **Rules** tab, replace everything with the contents of [`firestore.rules`](firestore.rules), and click **Publish**.
+4. In the left menu open **Security → Authentication** (older consoles: **Build → Authentication**) and click **Get started** if you see it. Then:
+   - On the **Sign-in method** tab, enable **Anonymous** and save. This lets clients comment without an account.
+   - Click **Add new provider → Google**, turn it on, choose a support email and click **Save**. This is how your team signs in.
+   - On the **Settings** tab, open **Authorized domains → Add domain** and add `adamskov-123.github.io`.
+5. Open **Project settings** (gear icon next to *Project Overview*) → **Your apps** → the **`</>`** (Web) button. Register an app with any nickname (you don't need Firebase Hosting). It shows a `firebaseConfig` block.
+6. Copy `apiKey` and `projectId` from that block into [`js/config.js`](js/config.js) in this repository. On GitHub: open the file, click the pencil icon, fill in the two values, and click **Commit changes**. If you gave your database its own ID in step 2, put it in `databaseId` too. Everyone who opens the hosted app is now connected to your project, with nothing to paste.
+7. Open **https://adamskov-123.github.io/Storyboard/** (give GitHub Pages a minute to update), click **Sign in with Google**, then **Set up team**, and name the team. You're its admin. If you signed in with a work address such as `you@9milesmedia.com`, **anyone with an @9milesmedia.com Google account can join just by signing in**.
+8. Send teammates the app's address. They click **Sign in with Google** with their work account, and they're in.
 
-Then click **Create client link** and send the link to your client.
+**People outside your domain** (freelancers, for example): click your avatar → **Team members & approvals…** and type their Google email under *Approve someone from outside…*. They sign in and they're in. You can also turn automatic joining off there, to approve everyone yourself, and set someone's role to **Admin** so they can approve people too.
 
-**You only do this once.** The same Firebase project holds the links for all your storyboards: for each new one, just click **Client link → Create client link**. Project files you save (*File → Save project*) carry these settings, so when you open one on another computer, in another browser, or in the hosted copy, that browser is set up automatically, and you don't paste anything again. (Your *name on replies* isn't included, since each person sets their own.)
+**Already set up Firebase before?** Do steps 3, 4 (Google and the authorized domain), 6 and 7. The new rules keep your existing client links working.
 
-### Good to know
-- **Privacy.** Anyone with a link can view that storyboard and comment. Links contain a long random ID, and nobody can list or browse your storyboards. *Client link → More options → Stop sharing* deletes the online copy and its comments, and the link stops working.
-- **Permissions** are enforced by the security rules, not just the app. Commenters can only edit or delete their own comments, and whoever started a thread can delete it. Only the browser that created a link can update it, resolve comments or post as *Team*. If you open the project file on another computer, that browser can do so too, because the file carries a secret owner key. Keep project files to yourself.
-- **What gets uploaded:** each frame as you see it (framing and arrows included, about 1400 px wide), the filled-in text, and the cover page. Your original images stay on your computer.
-- **Free plan limits.** Firestore's free tier stores 1 GiB and serves 50,000 document reads a day, which is plenty for typical client reviews. Each time a client opens a link, it reads about one document per frame.
-- The Firebase web config isn't a secret; it's designed to be public. It's stored in your browser and in the project files you save, never in this repository.
+(Prefer not to put the settings in the repository? Leave `js/config.js` empty. Each browser then gets connected by pasting the config into the setup screen, via *Connect Firebase…* on the home page, or by opening a *link for teammates* from Team members.)
 
-## Setting up team storyboards (one time, about 5 minutes)
-
-Team storyboards use the same free Firebase project as client links. If you haven't connected one yet, do the client link setup above first. (On the home page, *Connect Firebase…* opens the same setup screen.)
-
-1. **Use the hosted app.** Google sign-in only works from a web address, so use your GitHub Pages copy (**https://adamskov-123.github.io/Storyboard/**), not the downloaded file. Storyboards you made in the downloaded copy can be brought over with *Save project file* → *Open project file*, then ⋯ → *Move to team*.
-2. **Publish the latest security rules.** If you set up Firebase before team storyboards existed, copy [`firestore.rules`](firestore.rules) again (or use *Copy rules* in the setup screen), paste it into **Firestore → Rules** and click **Publish**. Client links keep working with the new rules.
-3. In Firebase open **Security → Authentication → Sign-in method**, click **Add new provider → Google**, turn it on, choose a support email and click **Save**.
-4. Still in Authentication, open the **Settings** tab → **Authorized domains** → **Add domain**, and add `adamskov-123.github.io`.
-5. Open the app, click **Sign in with Google** on the home page, then **Set up team** and give the team a name. You're its admin.
-6. Click your avatar (top right) → **Team members & approvals…**. Copy the **team link** and send it to your teammates. When they open it, the app connects to your Firebase project by itself; they click **Sign in with Google** and see *Waiting for approval*. Type their Google email under **Approve a teammate** and click **Approve** (you can also approve people before they sign in). They click *Check again*, and they're in. Set someone's role to **Admin** to let them approve people too.
+### Client links
+Open a storyboard, click **Client link → Create client link**, and send the link to your client. Only team members can create client links, so you need to be signed in. The same Firebase project holds the links for all your storyboards.
 
 ### Good to know
-- **Who can see what.** Only approved Google accounts can read or change team storyboards. This is enforced by the security rules, not just the app, and removing someone takes effect immediately.
+- **Who can see what.** Only team members can see or change team storyboards and create client links. This is enforced by the security rules, not just the app. When an admin removes someone, they lose access straight away, even if they're signed in at the time. People at your domain who were removed are kept on the list as *removed*, so they can't simply join again; an admin can *Restore* them.
+- **Client link privacy.** Anyone with a link can view that storyboard and comment. Links contain a long random ID, and nobody can list or browse your storyboards. *Client link → More options → Stop sharing* deletes the online copy and its comments, and the link stops working.
+- **Comment permissions.** Commenters can only edit or delete their own comments, and whoever started a thread can delete it. Updating a link, resolving comments and posting as *Team* need the link's secret owner key, which is stored with the storyboard (so whoever is editing a team storyboard can do these). Project files carry the key too, so keep them to yourselves.
+- **What clients see:** each frame as you see it (framing and arrows included, about 1400 px wide), the filled-in text, and the cover page.
 - **Signing out** removes team storyboards from that computer (they stay safe online). Storyboards that are only on that computer aren't affected.
 - **Storage.** The free plan has no file storage without a credit card, so images are kept in Firestore itself. Images over about 900 KB are recompressed to fit (up to 2400 px on the long side, which is plenty for storyboards). The 1 GB is shared by team storyboards and client links; typically that's 2,000 to 4,000 frames, depending on your images. The storage bar is the app's own estimate (it doesn't count client links made from storyboards that are only on someone's computer). The **Usage** tab in Firestore has Google's exact figure. Deleting a storyboard (⋯ → *Delete for everyone*) or stopping a client link frees its space.
-- **Daily limits.** The free plan allows 50,000 reads and 20,000 writes a day. Opening a team storyboard on a computer reads its text plus any images that computer hasn't downloaded before, and each save writes a couple of documents, so a small team stays well within this.
+- **Daily limits.** The free plan allows 50,000 reads and 20,000 writes a day. Opening a team storyboard on a computer reads its text plus any images that computer hasn't downloaded before, each save writes a couple of documents, and each time a client opens a link it reads about one document per frame. A small team stays well within this.
+- **The settings in `js/config.js` aren't secret.** Firebase designs them to be public, and every client link already contains them. Access is controlled by the security rules: strangers who find the app can sign in, but they only see *Waiting for approval*.
+- **After updating the app**, if `firestore.rules` changed, paste it into Firestore → Rules again and click **Publish**. Admins can copy it with *Copy security rules* in Team members.
 
 ## Keyboard shortcuts
 
@@ -131,6 +128,7 @@ js/util.js          helpers, icons, toasts, dialogs, word diff
 js/store.js         storyboard library (IndexedDB), the open storyboard's state and undo history, .storyboard files
 js/home.js          home page: all storyboards, team status, storage bar, new/duplicate/delete/import
 js/team.js          team storyboards: Google sign-in, members, sync to Firestore, one-editor lock
+js/config.js        your Firebase project's settings (optional; empty = set up per browser)
 js/render.js        frame rendering: reframing and arrows (board, editor, PDF, uploads)
 js/board.js         board view and drag-to-reorder
 js/editor.js        frame editor (reframe, arrows, fields)
@@ -153,4 +151,4 @@ npx firebase-tools emulators:start --only firestore,auth --project demo-storyboa
 python3 -m http.server 8099   # in another terminal
 ```
 
-Then open `http://127.0.0.1:8099/index.html?emulator=127.0.0.1`. To make the setting stick, run `localStorage.setItem('sb-emulator', '"127.0.0.1"')` in the console. Set `sb-review-base` to `"http://127.0.0.1:8099/review.html"` so links point at the local review page. With the emulator, *Sign in* asks for an email address instead of showing Google's sign-in, so you can try several team members in separate browser profiles. After editing `firestore.rules`, run `node tools/sync-rules.mjs`.
+Then open `http://127.0.0.1:8099/index.html?emulator=127.0.0.1`. To make the setting stick, run `localStorage.setItem('sb-emulator', '"127.0.0.1"')` in the console. Set `sb-review-base` to `"http://127.0.0.1:8099/review.html"` so links point at the local review page. With the emulator, *Sign in* asks for an email address instead of showing Google's sign-in, so you can try several team members in separate browser profiles. Keep `js/config.js` empty when testing against the emulator. After editing `firestore.rules`, run `node tools/sync-rules.mjs`.

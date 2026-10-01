@@ -2637,6 +2637,22 @@ body.is-readonly .stage canvas {
 .member-approve .member-list {
   margin: 4px 0 0;
 }
+.member-row.is-removed .member-email {
+  color: var(--text-3);
+  text-decoration: line-through;
+}
+.form-row > label.join-domain {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text);
+}
+.join-domain .input {
+  width: 190px;
+}
 @media (max-width: 640px) {
   .team-bar {
     margin: 6px 16px 0;
