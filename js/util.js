@@ -308,6 +308,11 @@ window.SB = window.SB || {};
     eye: '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
     grip: '<circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/>',
     more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+    'view-single': '<g fill="currentColor" stroke="none"><rect x="3" y="3.5" width="18" height="12.5" rx="2"/><circle cx="8.5" cy="20" r="1.3"/><circle cx="12" cy="20" r="1.3"/><circle cx="15.5" cy="20" r="1.3"/></g>',
+    'view-cols1': '<g fill="currentColor" stroke="none"><rect x="3" y="4" width="18" height="7.2" rx="1.5"/><rect x="3" y="12.8" width="18" height="7.2" rx="1.5"/></g>',
+    'view-cols2': '<g fill="currentColor" stroke="none"><rect x="3" y="4" width="8.2" height="7.2" rx="1.3"/><rect x="12.8" y="4" width="8.2" height="7.2" rx="1.3"/><rect x="3" y="12.8" width="8.2" height="7.2" rx="1.3"/><rect x="12.8" y="12.8" width="8.2" height="7.2" rx="1.3"/></g>',
+    'view-cols3': '<g fill="currentColor" stroke="none"><rect x="2" y="5" width="5.6" height="6.2" rx="1"/><rect x="9.2" y="5" width="5.6" height="6.2" rx="1"/><rect x="16.4" y="5" width="5.6" height="6.2" rx="1"/><rect x="2" y="12.8" width="5.6" height="6.2" rx="1"/><rect x="9.2" y="12.8" width="5.6" height="6.2" rx="1"/><rect x="16.4" y="12.8" width="5.6" height="6.2" rx="1"/></g>',
+    'view-cols4': '<g fill="currentColor" stroke="none"><rect x="1.5" y="6" width="4.4" height="5" rx=".8"/><rect x="7.2" y="6" width="4.4" height="5" rx=".8"/><rect x="12.9" y="6" width="4.4" height="5" rx=".8"/><rect x="18.6" y="6" width="4.4" height="5" rx=".8"/><rect x="1.5" y="12.6" width="4.4" height="5" rx=".8"/><rect x="7.2" y="12.6" width="4.4" height="5" rx=".8"/><rect x="12.9" y="12.6" width="4.4" height="5" rx=".8"/><rect x="18.6" y="12.6" width="4.4" height="5" rx=".8"/></g>',
     logo: '<rect x="2" y="4" width="9" height="7" rx="1.5"/><rect x="13" y="4" width="9" height="7" rx="1.5"/><rect x="2" y="13" width="9" height="7" rx="1.5"/><path d="M14 15h7M14 18h5"/>',
   };
 

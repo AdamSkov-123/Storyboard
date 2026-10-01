@@ -28,6 +28,7 @@ Nothing to install and no build step. It's plain HTML, CSS and JavaScript.
 
 **Client review links** (optional, see the setup below)
 - *Client link* uploads a copy of the storyboard and gives you a link to send. Clients open it in any browser with **no account**. They type their name once and the browser remembers it.
+- Clients choose how to **view** the storyboard: **one frame at a time** (a slideshow with *Previous*/*Next*, arrow keys, and a filmstrip of numbered thumbnails showing which frames have comments) or **1, 2, 3 or 4 frames per row**. Large frames show their text beside the image. The choice is remembered on their device.
 - Clients **click anywhere** to pin a comment: on an image, on a piece of text, on the cover or the page. They can **suggest edits** to any text, including filling in empty fields. They can **edit or delete their own comments**, and anyone can **reply**, so feedback becomes a conversation as in frame.io. Everyone with the link sees all comments, live.
 - In the app, the **Feedback** panel collects everything, grouped by frame with thumbnails showing where each pin is. Suggested edits appear as a tracked change (~~removed~~ / **added**) with an **Accept edit** button that applies the text to your storyboard. You can reply as your team (with a *Team* badge), resolve and reopen threads, and copy a plain-text summary for email or Slack. Board cards show a badge with each frame's open comments.
 - After making changes, click **Update link** and clients see the new version. Comments stay attached to their frames even if you reorder them.
@@ -85,6 +86,7 @@ Then click **Create client link** and send the link to your client.
 | Frame editor | <kbd>R</kbd> / <kbd>A</kbd> | Reframe / Arrows tool |
 | Frame editor | <kbd>Delete</kbd>, arrow keys | Delete or nudge the selected arrow |
 | Client page | <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Enter</kbd> | Post comment or reply |
+| Client page, one-at-a-time view | <kbd>←</kbd>/<kbd>→</kbd> | Previous / next frame |
 
 ## Notes and limitations
 - iPhone **HEIC** photos only open in Safari. In other browsers, export them as JPG first.

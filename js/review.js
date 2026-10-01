@@ -19,6 +19,10 @@
   let activeThread = null;
   let showResolved = false;
   let docSig = '';
+  const VIEWS = ['single', 'cols1', 'cols2', 'cols3', 'cols4'];
+  let view = U.storage.get('sb-review-view', '');
+  if (!VIEWS.includes(view)) view = window.innerWidth < 760 ? 'cols1' : 'cols2';
+  let slideId = null; // 'cover' or a frame id, in "one at a time" view
 
   /* ---------- Startup ---------- */
 
@@ -122,8 +126,22 @@
     });
     $('rv-panel-btn').addEventListener('click', () => document.body.classList.toggle('rv-panel-open'));
     $('rv-doc').addEventListener('click', onDocClick);
+    $('rv-view').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-view]');
+      if (b) setView(b.dataset.view);
+    });
+    syncViewButtons();
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && !$('rv-popover').hidden) closePopover();
+      if (view !== 'single' || U.isTyping(e.target) || !$('rv-popover').hidden || document.querySelector('dialog[open]')) return;
+      if (e.altKey || e.ctrlKey || e.metaKey) return;
+      if (e.key === 'ArrowRight' || e.key === 'PageDown') {
+        e.preventDefault();
+        goSlide(1);
+      } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+        e.preventDefault();
+        goSlide(-1);
+      }
     });
     document.addEventListener('mousedown', (e) => {
       const pop = $('rv-popover');
@@ -177,8 +195,64 @@
   };
   const frameIndex = (id) => review.frames.findIndex((f) => f.id === id);
 
+  /* ---------- Layout: one at a time, or N per row ---------- */
+
+  function setView(v) {
+    if (!VIEWS.includes(v) || v === view) return;
+    const keep = view === 'single' ? null : firstVisibleSlide();
+    view = v;
+    U.storage.set('sb-review-view', v);
+    if (v === 'single' && keep) slideId = keep;
+    closePopover();
+    syncViewButtons();
+    renderDoc();
+    if (v !== 'single' && slideId) {
+      const el = findAnchor(slideId === 'cover' ? 'cover' : `frame:${slideId}:card`);
+      if (el) el.scrollIntoView({ block: 'start' });
+    } else {
+      window.scrollTo({ top: 0 });
+    }
+  }
+
+  function syncViewButtons() {
+    U.$$('#rv-view [data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === view)));
+  }
+
+  function slides() {
+    const list = [];
+    if (review.cover && review.cover.include) list.push('cover');
+    for (const f of review.frames) list.push(f.id);
+    return list;
+  }
+
+  /** The cover or frame nearest the top of the screen, so switching views keeps your place. */
+  function firstVisibleSlide() {
+    const els = U.$$('.rv-cover, .rv-frame', $('rv-doc'));
+    const top = 70;
+    const el = els.find((x) => x.getBoundingClientRect().bottom > top + 40) || els[0];
+    if (!el) return null;
+    return el.classList.contains('rv-cover') ? 'cover' : el.dataset.frame;
+  }
+
+  function goSlide(delta) {
+    const list = slides();
+    const i = list.indexOf(slideId);
+    const next = list[U.clamp((i < 0 ? 0 : i) + delta, 0, list.length - 1)];
+    if (next && next !== slideId) {
+      closePopover();
+      slideId = next;
+      renderDoc();
+    }
+  }
+
+  function showSlide(id) {
+    if (view !== 'single' || id === slideId || !slides().includes(id)) return;
+    slideId = id;
+    renderDoc();
+  }
+
   function renderDoc() {
-    const sig = JSON.stringify([review.revision, review.title, review.cover, review.frames, review.fields, review.aspect, Array.from(images.values()).map((v) => v.rev)]);
+    const sig = JSON.stringify([review.revision, review.title, review.cover, review.frames, review.fields, review.aspect, Array.from(images.values()).map((v) => v.rev), view, view === 'single' ? slideId : null]);
     if (sig === docSig) return;
     docSig = sig;
     document.title = `${review.title} – Review`;
@@ -188,18 +262,77 @@
     const doc = $('rv-doc');
     const ratio = (review.aspect && review.aspect.ratio) || 16 / 9;
     doc.style.setProperty('--frame-ratio', ratio);
-    const parts = [];
-    if (c.include) parts.push(coverSection(review));
-    parts.push(
-      U.h(
-        'div',
-        { class: 'rv-grid' },
-        review.frames.map((f, i) => frameCard(f, i))
-      )
-    );
-    if (!review.frames.length) parts.push(U.h('p', { class: 'muted rv-state', text: 'This storyboard has no frames yet.' }));
+    doc.dataset.view = view;
+    const parts = view === 'single' ? singleView() : gridView();
     doc.replaceChildren(...parts);
     renderPins();
+  }
+
+  function gridView() {
+    const parts = [];
+    if (review.cover && review.cover.include) parts.push(coverSection(review));
+    const cols = view.slice(4);
+    parts.push(U.h('div', { class: 'rv-grid', dataset: { cols }, style: `--rv-cols:${cols}` }, review.frames.map((f, i) => frameCard(f, i))));
+    if (!review.frames.length) parts.push(U.h('p', { class: 'muted rv-state', text: 'This storyboard has no frames yet.' }));
+    return parts;
+  }
+
+  function singleView() {
+    const list = slides();
+    if (!list.length) return [U.h('p', { class: 'muted rv-state', text: 'This storyboard has no frames yet.' })];
+    if (!list.includes(slideId)) slideId = list[0];
+    const idx = list.indexOf(slideId);
+    const fi = frameIndex(slideId);
+    const label = slideId === 'cover' ? 'Cover page' : `Frame ${fi + 1} of ${review.frames.length}`;
+    const nav = U.h(
+      'div',
+      { class: 'rv-slide-nav', dataset: { noComment: '1' } },
+      U.h('button', { type: 'button', class: 'btn btn-ghost', disabled: idx === 0, 'aria-label': 'Previous', html: U.icon('left', 18) + '<span>Previous</span>', onclick: () => goSlide(-1) }),
+      U.h('span', { class: 'rv-slide-label', text: label }),
+      U.h('button', { type: 'button', class: 'btn btn-ghost', disabled: idx === list.length - 1, 'aria-label': 'Next', html: '<span>Next</span>' + U.icon('right', 18), onclick: () => goSlide(1) })
+    );
+    const body = slideId === 'cover' ? coverSection(review) : U.h('div', { class: 'rv-single' }, frameCard(review.frames[fi], fi));
+    const strip = U.h(
+      'div',
+      { class: 'rv-filmstrip', dataset: { noComment: '1' }, role: 'list', 'aria-label': 'All frames' },
+      list.map((id) => {
+        const i = frameIndex(id);
+        const img = id === 'cover' ? null : images.get(id);
+        const f = id === 'cover' ? null : review.frames[i];
+        return U.h(
+          'button',
+          { type: 'button', role: 'listitem', class: 'rv-film-item' + (id === slideId ? ' is-current' : ''), dataset: { slide: id }, title: id === 'cover' ? 'Cover page' : `Frame ${i + 1}`, 'aria-current': id === slideId ? 'true' : null, onclick: () => showSlide(id) },
+          id === 'cover'
+            ? U.h('span', { class: 'rv-film-cover', html: U.icon('book', 18) })
+            : img && f.rev
+              ? U.h('img', { src: img.data, alt: '', draggable: 'false' })
+              : U.h('span', { class: 'rv-film-empty' }),
+          U.h('span', { class: 'rv-film-num', text: id === 'cover' ? 'Cover' : String(i + 1) }),
+          U.h('span', { class: 'rv-film-count', hidden: true })
+        );
+      })
+    );
+    requestAnimationFrame(() => {
+      const cur = strip.querySelector('.is-current');
+      if (cur) cur.scrollIntoView({ block: 'nearest', inline: 'center' });
+    });
+    return [nav, body, strip];
+  }
+
+  /** Open-comment counts on the filmstrip thumbnails. */
+  function updateFilmstripCounts() {
+    const counts = {};
+    for (const t of threads) {
+      if (t.root.status === 'resolved') continue;
+      const k = C.targetKey(t.root);
+      counts[k] = (counts[k] || 0) + 1;
+    }
+    U.$$('.rv-film-item', $('rv-doc')).forEach((b) => {
+      const n = counts[b.dataset.slide] || 0;
+      const el = b.querySelector('.rv-film-count');
+      el.hidden = !n;
+      el.textContent = String(n);
+    });
   }
 
   function coverSection(r) {
@@ -233,23 +366,27 @@
       ),
       U.h(
         'div',
-        { class: 'rv-img', dataset: { anchor: `frame:${f.id}:image` } },
-        img ? U.h('img', { src: img.data, alt: `Frame ${i + 1}`, draggable: 'false' }) : U.h('span', { class: 'muted small', text: f.rev ? 'Loading…' : 'No image' })
-      ),
-      fields.length
-        ? U.h(
-            'dl',
-            { class: 'rv-fields' },
-            fields.map((fd) =>
-              U.h(
-                'div',
-                { class: 'rv-field', dataset: { anchor: `field:${f.id}:${fd.id}` } },
-                U.h('dt', {}, U.h('span', { text: fd.label }), U.h('button', { type: 'button', class: 'rv-mini-btn rv-field-suggest', dataset: { suggestFrame: f.id, suggestField: fd.id }, html: U.icon('edit', 12) + '<span>Suggest edit</span>' })),
-                U.h('dd', { text: f.text[fd.id].trim() })
+        { class: 'rv-frame-body' + (fields.length ? ' has-fields' : '') },
+        U.h(
+          'div',
+          { class: 'rv-img', dataset: { anchor: `frame:${f.id}:image` } },
+          img ? U.h('img', { src: img.data, alt: `Frame ${i + 1}`, draggable: 'false' }) : U.h('span', { class: 'muted small', text: f.rev ? 'Loading…' : 'No image' })
+        ),
+        fields.length
+          ? U.h(
+              'dl',
+              { class: 'rv-fields' },
+              fields.map((fd) =>
+                U.h(
+                  'div',
+                  { class: 'rv-field', dataset: { anchor: `field:${f.id}:${fd.id}` } },
+                  U.h('dt', {}, U.h('span', { text: fd.label }), U.h('button', { type: 'button', class: 'rv-mini-btn rv-field-suggest', dataset: { suggestFrame: f.id, suggestField: fd.id }, html: U.icon('edit', 12) + '<span>Suggest edit</span>' })),
+                  U.h('dd', { text: f.text[fd.id].trim() })
+                )
               )
             )
-          )
-        : null
+          : null
+      )
     );
   }
 
@@ -307,10 +444,16 @@
       place.el.append(pin);
     }
     if (pending) placePendingPin();
+    updateFilmstripCounts();
   }
 
   function focusThread(id, fromPin) {
     activeThread = id;
+    if (view === 'single' && !fromPin) {
+      const t = threads.find((x) => x.root.id === id);
+      const key = t ? C.targetKey(t.root) : null;
+      if (key && key !== 'page') showSlide(key);
+    }
     U.$$('.rv-pin', $('rv-doc')).forEach((p) => p.classList.toggle('is-active', p.dataset.thread === id));
     const root = threads.find((t) => t.root.id === id);
     if (root && root.root.status === 'resolved' && !showResolved) {
@@ -347,7 +490,7 @@
       return;
     }
     if (!commentMode || !review) return;
-    if (e.target.closest('button, a, input, textarea, select, .rv-popover')) return;
+    if (e.target.closest('button, a, input, textarea, select, .rv-popover, [data-no-comment]')) return;
     const sel = window.getSelection && window.getSelection();
     if (sel && String(sel).trim()) return;
     const anchor = e.target.closest('[data-anchor]');

@@ -17,6 +17,16 @@
         <div id="rv-sub" class="muted small"></div>
       </div>
       <span class="spacer"></span>
+      <div class="rv-view-wrap">
+        <span class="rv-view-label">View</span>
+        <div id="rv-view" class="seg rv-view" role="group" aria-label="Layout">
+          <button type="button" class="seg-btn" data-view="single" data-icon="view-single" title="One frame at a time" aria-label="One frame at a time"></button>
+          <button type="button" class="seg-btn" data-view="cols1" data-icon="view-cols1" title="1 frame per row" aria-label="1 frame per row"></button>
+          <button type="button" class="seg-btn" data-view="cols2" data-icon="view-cols2" title="2 frames per row" aria-label="2 frames per row"></button>
+          <button type="button" class="seg-btn rv-view-wide" data-view="cols3" data-icon="view-cols3" title="3 frames per row" aria-label="3 frames per row"></button>
+          <button type="button" class="seg-btn rv-view-wide" data-view="cols4" data-icon="view-cols4" title="4 frames per row" aria-label="4 frames per row"></button>
+        </div>
+      </div>
       <button id="rv-name-btn" type="button" class="btn btn-ghost btn-sm" hidden></button>
       <button id="rv-mode-btn" type="button" class="btn btn-ghost btn-sm" aria-pressed="true" data-icon="pin" title="When on, clicking the storyboard adds a comment"><span>Commenting on</span></button>
       <button id="rv-panel-btn" type="button" class="btn btn-primary btn-sm" data-icon="message"><span>Comments</span><span id="rv-count" class="count-pill" hidden></span></button>

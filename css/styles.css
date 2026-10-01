@@ -1753,8 +1753,20 @@ body.rv-browse .rv-doc {
   gap: 18px;
   align-items: start;
 }
+.rv-grid[data-cols] {
+  grid-template-columns: repeat(var(--rv-cols), minmax(0, 1fr));
+}
+.rv-grid[data-cols='1'] {
+  max-width: 1280px;
+  margin: 0 auto;
+  gap: 24px;
+}
+.rv-grid[data-cols='4'] {
+  gap: 14px;
+}
 .rv-frame {
   position: relative;
+  container-type: inline-size;
   padding: 10px;
   border-radius: var(--radius);
   background: var(--surface);
@@ -1769,6 +1781,10 @@ body.rv-browse .rv-doc {
 }
 .rv-img {
   position: relative;
+  width: 100%;
+  /* Never taller than most of the screen, whatever the layout or aspect ratio. */
+  max-width: calc(76vh * var(--frame-ratio));
+  margin-inline: auto;
   aspect-ratio: var(--frame-ratio);
   display: grid;
   place-items: center;
@@ -1817,6 +1833,7 @@ body.rv-browse .rv-doc {
   font-size: 14px;
 }
 .rv-mini-btn {
+  white-space: nowrap;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -1990,12 +2007,16 @@ body.rv-browse .rv-doc {
     z-index: 40;
     height: 100vh;
     width: min(420px, 100vw);
-    box-shadow: var(--shadow-lg);
+    box-shadow: none;
+    visibility: hidden;
     transform: translateX(105%);
-    transition: transform 0.2s ease;
+    transition: transform 0.2s ease, visibility 0s linear 0.2s;
   }
   body.rv-panel-open .rv-panel {
     transform: none;
+    visibility: visible;
+    box-shadow: var(--shadow-lg);
+    transition: transform 0.2s ease;
   }
   .rv-panel-close {
     display: inline-grid;
@@ -2025,4 +2046,158 @@ a.btn-primary {
 }
 a.icon-btn {
   text-decoration: none;
+}
+
+/* ---------- Review page: layout switcher, wide frames, one-at-a-time ---------- */
+
+.rv-view-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rv-view-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.rv-view .seg-btn {
+  display: grid;
+  place-items: center;
+  min-width: 34px;
+  padding: 0 7px;
+}
+
+/* Frames shown large get their text beside the image instead of underneath. */
+@container (min-width: 720px) {
+  .rv-frame-body.has-fields {
+    display: grid;
+    grid-template-columns: minmax(0, 1.75fr) minmax(240px, 1fr);
+    gap: 22px;
+    align-items: start;
+  }
+  .rv-frame-body.has-fields .rv-fields {
+    margin-top: 0;
+  }
+  .rv-frame-body .rv-field dd {
+    font-size: 15px;
+  }
+}
+@container (max-width: 300px) {
+  .rv-mini-btn span {
+    display: none;
+  }
+  .rv-mini-btn {
+    padding: 0 6px;
+  }
+  .rv-field dd {
+    font-size: 13px;
+  }
+}
+
+.rv-slide-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin: 0 auto 14px;
+  cursor: auto;
+}
+.rv-slide-label {
+  min-width: 130px;
+  text-align: center;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.rv-single {
+  max-width: 1280px;
+  margin: 0 auto;
+}
+.rv-doc[data-view='single'] .rv-cover {
+  margin-bottom: 0;
+}
+.rv-filmstrip {
+  display: flex;
+  gap: 8px;
+  max-width: 1280px;
+  margin: 18px auto 0;
+  padding: 4px 4px 10px;
+  overflow-x: auto;
+  cursor: auto;
+  scrollbar-width: thin;
+}
+.rv-film-item {
+  position: relative;
+  flex: none;
+  width: 104px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  cursor: pointer;
+}
+.rv-film-item:hover {
+  border-color: var(--border-strong);
+}
+.rv-film-item.is-current {
+  border-color: var(--accent);
+}
+.rv-film-item img,
+.rv-film-empty,
+.rv-film-cover {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: var(--frame-ratio);
+  max-height: 120px;
+  object-fit: cover;
+  background: #0d0d0f;
+  color: var(--text-2);
+}
+.rv-film-cover {
+  background: var(--surface-2);
+}
+.rv-film-num {
+  display: block;
+  padding: 3px 0 4px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-2);
+}
+.rv-film-count {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--pin);
+  color: var(--pin-text);
+  font-size: 10.5px;
+  font-weight: 800;
+  line-height: 18px;
+}
+
+@media (max-width: 900px) {
+  .rv-grid[data-cols='4'] {
+    --rv-cols: 3 !important;
+  }
+}
+@media (max-width: 640px) {
+  .rv-grid[data-cols='3'],
+  .rv-grid[data-cols='4'] {
+    --rv-cols: 2 !important;
+  }
+  .rv-view-wide,
+  .rv-view-label {
+    display: none !important;
+  }
+  .rv-view-wrap {
+    order: 4;
+  }
+  .rv-slide-nav .btn span {
+    display: none;
+  }
 }
