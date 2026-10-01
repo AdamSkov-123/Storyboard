@@ -58,6 +58,7 @@
 
   S.newProject = () => ({
     formatVersion: 1,
+    uid: U.uid('p'),
     title: '',
     aspect: '16:9',
     fields: S.defaultFields(),
@@ -95,6 +96,7 @@
   S.normalizeProject = function (p) {
     const d = S.newProject();
     if (!p || typeof p !== 'object') return d;
+    if (typeof p.uid === 'string' && /^[A-Za-z0-9_-]{4,64}$/.test(p.uid)) d.uid = p.uid;
     d.title = String(p.title || '');
     d.aspect = S.ASPECTS.some((a) => a.id === p.aspect) ? p.aspect : '16:9';
     if (Array.isArray(p.fields)) {
@@ -254,7 +256,7 @@
       }
       let req;
       try {
-        req = indexedDB.open(DB_NAME, 1);
+        req = indexedDB.open(DB_NAME, 2);
       } catch (e) {
         reject(e);
         return;
@@ -263,10 +265,23 @@
         const db = req.result;
         if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv');
         if (!db.objectStoreNames.contains('images')) db.createObjectStore('images', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('projects')) db.createObjectStore('projects', { keyPath: 'id' });
       };
-      req.onsuccess = () => resolve(req.result);
+      let blockedToast = null;
+      req.onsuccess = () => {
+        if (blockedToast) blockedToast.close();
+        const db = req.result;
+        // If a newer version of the app opens in another tab, step aside so it can upgrade storage.
+        db.onversionchange = () => {
+          db.close();
+          dbPromise = null;
+          U.toast('Storyboard Maker was updated in another tab. Reload this page to keep working here.', { type: 'error', duration: 0 });
+        };
+        resolve(db);
+      };
       req.onerror = () => reject(req.error || new Error('Could not open database'));
-      req.onblocked = () => reject(new Error('Database blocked'));
+      // Another tab still has the old version open: wait for it rather than failing.
+      req.onblocked = () => (blockedToast = U.toast('Close any other Storyboard Maker tabs to finish updating.', { duration: 0 }));
     });
     return dbPromise;
   }
@@ -285,19 +300,131 @@
   S.kvGet = (key) => idb('kv', 'readonly', (s) => s.get(key)).catch(() => undefined);
   S.kvSet = (key, value) => idb('kv', 'readwrite', (s) => s.put(value, key)).catch(() => undefined);
 
+  /* ---------- Library of storyboards ---------- */
+
+  S.currentId = null; // the open storyboard's id (= project.uid), or null on the home page
+  // id -> {id, title, client, frames, shared, aspect, createdAt, updatedAt, thumb, thumbKey, data}
+  const records = new Map();
+
+  function metaFor(project) {
+    return {
+      title: project.title || '',
+      client: (project.cover && project.cover.client) || '',
+      frames: project.frames.length,
+      shared: !!project.review,
+      aspect: project.aspect,
+    };
+  }
+
+  async function putRecord(id) {
+    const rec = records.get(id);
+    if (!S.persistent || !rec) return;
+    await idb('projects', 'readwrite', (s) => s.put(rec));
+  }
+
+  S.listProjects = () => Array.from(records.values()).map((r) => Object.assign({}, r, { data: undefined }));
+  S.hasProject = (id) => records.has(id);
+
+  let pendingSave = false;
   async function saveNow() {
+    pendingSave = false;
+    const id = S.currentId;
+    if (!id) return;
+    const prev = records.get(id) || { id, createdAt: Date.now(), thumb: null, thumbKey: '' };
+    const rec = Object.assign({}, prev, metaFor(S.project), { id, updatedAt: Date.now(), data: JSON.parse(JSON.stringify(S.project)) });
+    const key = thumbKeyFor(S.project);
+    if (key !== rec.thumbKey) {
+      const src = thumbSource(S.project);
+      const entry = src ? S.images.get(src.imageId) : null;
+      if (!src || entry) {
+        rec.thumb = src ? drawThumb(S.project, src, entry) : null;
+        rec.thumbKey = key;
+      }
+    }
+    records.set(id, rec);
     if (!S.persistent) return;
     setSaveState('saving');
     try {
-      await idb('kv', 'readwrite', (s) => s.put(S.project, 'project'));
+      await putRecord(id);
       setSaveState('saved');
     } catch (e) {
       console.error('Autosave failed', e);
       setSaveState('error');
     }
   }
-  const scheduleSave = U.debounce(saveNow, 400);
-  S.flushSave = () => scheduleSave.flush();
+  const debouncedSave = U.debounce(saveNow, 400);
+  function scheduleSave() {
+    pendingSave = true;
+    debouncedSave();
+  }
+  /** Write any pending autosave right away. */
+  S.flushSave = async function () {
+    if (!pendingSave) return;
+    debouncedSave.cancel();
+    await saveNow();
+  };
+
+  /* ---------- Library thumbnails ---------- */
+
+  function thumbSource(project) {
+    const f = project.frames.find((fr) => fr.imageId);
+    if (f) return { kind: 'frame', frame: f, imageId: f.imageId };
+    if (project.cover && project.cover.imageId) return { kind: 'cover', imageId: project.cover.imageId };
+    return null;
+  }
+
+  function thumbKeyFor(project) {
+    const s = thumbSource(project);
+    if (!s) return 'none';
+    return JSON.stringify(s.kind === 'frame' ? [s.imageId, s.frame.view, s.frame.arrows, project.aspect] : ['cover', s.imageId]);
+  }
+
+  function drawThumb(project, src, entry) {
+    const ratio = S.aspect(project);
+    const W = ratio >= 1 ? 400 : Math.round(400 * ratio);
+    const H = ratio >= 1 ? Math.round(400 / ratio) : 400;
+    const c = document.createElement('canvas');
+    c.width = W;
+    c.height = H;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#0d0d0f';
+    ctx.fillRect(0, 0, W, H);
+    if (src.kind === 'frame') {
+      SB.render.drawFrame(ctx, src.frame, W, H, { image: entry });
+    } else {
+      const s = Math.min(W / entry.w, H / entry.h);
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(entry.preview, (W - entry.w * s) / 2, (H - entry.h * s) / 2, entry.w * s, entry.h * s);
+    }
+    return c.toDataURL('image/jpeg', 0.82);
+  }
+
+  /** Make sure a library entry has an up-to-date thumbnail (used by the home page). */
+  S.ensureThumb = async function (id) {
+    const rec = records.get(id);
+    if (!rec || !rec.data) return null;
+    const key = thumbKeyFor(rec.data);
+    if (rec.thumbKey === key) return rec.thumb || null;
+    const src = thumbSource(rec.data);
+    let thumb = null;
+    if (src) {
+      let entry = S.images.get(src.imageId);
+      let temporary = false;
+      if (!entry && S.persistent) {
+        const r = await idb('images', 'readonly', (s) => s.get(src.imageId)).catch(() => null);
+        if (r) {
+          entry = await makeEntry(r).catch(() => null);
+          temporary = !!entry;
+        }
+      }
+      if (entry) thumb = drawThumb(rec.data, src, entry);
+      if (temporary) URL.revokeObjectURL(entry.url);
+    }
+    rec.thumb = thumb;
+    rec.thumbKey = key;
+    await putRecord(id).catch(() => {});
+    return thumb;
+  };
 
   let persistRequested = false;
   function requestPersist() {
@@ -430,14 +557,15 @@
 
   function referencedImageIds(project) {
     const ids = new Set();
-    for (const f of project.frames) if (f.imageId) ids.add(f.imageId);
+    if (!project) return ids;
+    for (const f of project.frames || []) if (f.imageId) ids.add(f.imageId);
     if (project.cover && project.cover.imageId) ids.add(project.cover.imageId);
     return ids;
   }
 
   /* ---------- Startup ---------- */
 
-  S.init = async function (onProgress) {
+  S.init = async function () {
     try {
       await openDB();
       S.persistent = true;
@@ -449,80 +577,189 @@
       return;
     }
     try {
-      const saved = await idb('kv', 'readonly', (s) => s.get('project'));
-      if (saved) S.project = S.normalizeProject(saved);
-      const ids = referencedImageIds(S.project);
-      const records = await idb('images', 'readonly', (s) => s.getAll());
-      const wanted = records.filter((r) => ids.has(r.id));
-      const stale = records.filter((r) => !ids.has(r.id));
-      if (stale.length) {
-        idb('images', 'readwrite', (s) => {
-          let last;
-          for (const r of stale) last = s.delete(r.id);
-          return last;
-        }).catch(() => {});
-      }
-      let done = 0;
-      const queue = wanted.slice();
-      const worker = async () => {
-        while (queue.length) {
-          const rec = queue.shift();
-          try {
-            S.images.set(rec.id, await makeEntry(rec));
-          } catch (err) {
-            console.warn('Could not decode stored image', rec.id, err);
-          }
-          done++;
-          if (onProgress) onProgress(done, wanted.length);
+      const all = await idb('projects', 'readonly', (s) => s.getAll());
+      for (const r of all) if (r && r.id && r.data) records.set(r.id, r);
+      // Earlier versions kept a single autosaved storyboard; move it into the library.
+      const legacy = await idb('kv', 'readonly', (s) => s.get('project'));
+      if (legacy) {
+        const p = S.normalizeProject(legacy);
+        if ((p.frames.length || p.title) && !records.has(p.uid)) {
+          const now = Date.now();
+          records.set(p.uid, Object.assign({ id: p.uid, createdAt: now, updatedAt: now, thumb: null, thumbKey: '' }, metaFor(p), { data: p }));
+          await putRecord(p.uid);
         }
-      };
-      await Promise.all([worker(), worker(), worker()]);
+        await idb('kv', 'readwrite', (s) => s.delete('project'));
+      }
+      await gcImages();
       setSaveState('saved');
     } catch (e) {
-      console.error('Could not load saved storyboard', e);
+      console.error('Could not load your storyboards', e);
       setSaveState('error');
     }
     resetHistory();
   };
 
-  /* ---------- New / project files ---------- */
+  /** Delete stored images no storyboard uses any more. */
+  async function gcImages() {
+    if (!S.persistent) return;
+    const used = new Set(S.images.keys());
+    for (const r of records.values()) for (const id of referencedImageIds(r.data)) used.add(id);
+    const keys = await idb('images', 'readonly', (s) => s.getAllKeys());
+    const stale = keys.filter((k) => !used.has(k));
+    if (!stale.length) return;
+    await idb('images', 'readwrite', (s) => {
+      let last;
+      for (const k of stale) last = s.delete(k);
+      return last;
+    });
+  }
 
-  async function clearAllImages() {
-    for (const im of S.images.values()) URL.revokeObjectURL(im.url);
-    S.images.clear();
-    if (S.persistent) {
-      try {
-        await idb('images', 'readwrite', (s) => s.clear());
-      } catch (e) {
-        console.warn(e);
+  async function loadImages(project, onProgress) {
+    const wanted = Array.from(referencedImageIds(project)).filter((id) => !S.images.has(id));
+    if (!S.persistent || !wanted.length) return;
+    let done = 0;
+    const worker = async () => {
+      while (wanted.length) {
+        const id = wanted.shift();
+        try {
+          const rec = await idb('images', 'readonly', (s) => s.get(id));
+          if (rec) S.images.set(id, await makeEntry(rec));
+        } catch (err) {
+          console.warn('Could not load image', id, err);
+        }
+        done++;
+        if (onProgress) onProgress(done);
       }
+    };
+    await Promise.all([worker(), worker(), worker()]);
+  }
+
+  /** Free decoded images the open storyboard doesn't use (they stay stored on disk). */
+  function releaseImages(keep) {
+    if (!S.persistent) return;
+    for (const [id, im] of S.images) {
+      if (keep.has(id)) continue;
+      URL.revokeObjectURL(im.url);
+      S.images.delete(id);
     }
   }
 
-  S.resetProject = async function () {
-    await clearAllImages();
-    S.project = S.newProject();
+  /* ---------- Opening, creating, duplicating, deleting ---------- */
+
+  S.openProject = async function (id, onProgress) {
+    if (S.currentId === id) return true;
+    await S.flushSave();
+    const rec = records.get(id);
+    if (!rec) return false;
+    const project = S.normalizeProject(rec.data);
+    project.uid = id;
+    releaseImages(referencedImageIds(project));
+    await loadImages(project, onProgress);
+    S.project = project;
+    S.currentId = id;
     resetHistory();
-    await saveNow();
+    setSaveState(S.persistent ? 'saved' : 'off');
     emit({ reset: true });
+    return true;
   };
+
+  S.closeProject = async function () {
+    await S.flushSave();
+    S.currentId = null;
+    S.project = S.newProject(); // placeholder while on the home page; never saved
+    resetHistory();
+    releaseImages(new Set());
+    emit({ reset: true, closed: true });
+  };
+
+  S.createProject = async function (init) {
+    await S.flushSave();
+    const project = S.newProject();
+    if (init) init(project);
+    const now = Date.now();
+    records.set(project.uid, Object.assign({ id: project.uid, createdAt: now, updatedAt: now, thumb: null, thumbKey: '' }, metaFor(project), { data: JSON.parse(JSON.stringify(project)) }));
+    await putRecord(project.uid).catch((e) => console.warn(e));
+    return project.uid;
+  };
+
+  /** Copy a storyboard. The copy starts without a client link. */
+  S.duplicateProject = async function (id) {
+    if (id === S.currentId) await S.flushSave();
+    const rec = records.get(id);
+    if (!rec) return null;
+    const data = S.normalizeProject(JSON.parse(JSON.stringify(rec.data)));
+    data.uid = U.uid('p');
+    data.review = null;
+    data.title = (data.title || 'Untitled storyboard') + ' (copy)';
+    const now = Date.now();
+    records.set(data.uid, Object.assign({}, rec, metaFor(data), { id: data.uid, createdAt: now, updatedAt: now, data }));
+    await putRecord(data.uid).catch((e) => console.warn(e));
+    return data.uid;
+  };
+
+  S.projectData = (id) => {
+    const rec = records.get(id);
+    return rec ? (id === S.currentId ? S.project : rec.data) : null;
+  };
+
+  S.deleteProject = async function (id) {
+    if (S.currentId === id) await S.closeProject();
+    records.delete(id);
+    if (!S.persistent) return;
+    await idb('projects', 'readwrite', (s) => s.delete(id));
+    await gcImages().catch(() => {});
+  };
+
+  /**
+   * Add a project read from a .storyboard file to the library and open it.
+   * asCopy: keep the existing storyboard with the same id and add this one as a separate copy.
+   */
+  S.importProject = async function (data, asCopy) {
+    await S.flushSave();
+    const project = data.project;
+    if (asCopy) {
+      project.uid = U.uid('p');
+      project.review = null;
+      project.title = (project.title || 'Untitled storyboard') + ' (copy)';
+    }
+    for (const e of data.entries) {
+      if (!S.images.has(e.id)) S.images.set(e.id, e);
+      await storeImageRecord(e);
+    }
+    const prev = records.get(project.uid);
+    const now = Date.now();
+    records.set(
+      project.uid,
+      Object.assign({ id: project.uid, createdAt: prev ? prev.createdAt : now, thumb: null, thumbKey: '' }, metaFor(project), { updatedAt: now, data: JSON.parse(JSON.stringify(project)) })
+    );
+    await putRecord(project.uid).catch((e) => console.warn(e));
+    if (S.currentId === project.uid) S.currentId = null; // re-open with the imported version
+    await S.openProject(project.uid);
+    await gcImages().catch(() => {});
+    return project.uid;
+  };
+
+  /* ---------- Project files ---------- */
 
   const MAGIC = 'STRYBRD1';
 
   /** Project files are a small binary container: magic, JSON length, JSON, then the raw image bytes. */
-  S.buildProjectFile = async function (settings) {
+  S.buildProjectFile = async function (settings, projectId) {
+    const project = projectId ? S.projectData(projectId) : S.project;
+    if (!project) throw new Error('That storyboard no longer exists.');
     const parts = [];
     const index = [];
     let offset = 0;
-    for (const id of referencedImageIds(S.project)) {
-      const im = S.images.get(id);
-      if (!im) continue;
+    for (const id of referencedImageIds(project)) {
+      let im = S.images.get(id);
+      if (!im && S.persistent) im = await idb('images', 'readonly', (s) => s.get(id)).catch(() => null);
+      if (!im || !im.blob) continue;
       index.push({ id, name: im.name, type: im.blob.type || 'image/jpeg', offset, size: im.blob.size });
       parts.push(im.blob);
       offset += im.blob.size;
     }
     const header = new TextEncoder().encode(
-      JSON.stringify({ app: 'storyboard-maker', formatVersion: 1, savedAt: new Date().toISOString(), project: S.project, settings: settings || null, images: index })
+      JSON.stringify({ app: 'storyboard-maker', formatVersion: 1, savedAt: new Date().toISOString(), project, settings: settings || null, images: index })
     );
     const len = new Uint8Array(4);
     new DataView(len.buffer).setUint32(0, header.length, true);
@@ -556,13 +793,4 @@
     return { project, entries, settings: meta.settings && typeof meta.settings === 'object' ? meta.settings : null };
   };
 
-  S.loadProject = async function (data) {
-    await clearAllImages();
-    for (const e of data.entries) S.images.set(e.id, e);
-    S.project = data.project;
-    resetHistory();
-    for (const e of data.entries) await storeImageRecord(e);
-    await saveNow();
-    emit({ reset: true });
-  };
 })(window.SB);

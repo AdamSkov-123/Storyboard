@@ -2201,3 +2201,220 @@ a.icon-btn {
     display: none;
   }
 }
+
+/* ---------- Home page: all storyboards ---------- */
+
+.brand-btn {
+  border: 0;
+  background: none;
+  padding: 6px 8px 6px 4px;
+  margin-left: -4px;
+  border-radius: 9px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 750;
+  font-size: 15px;
+}
+.brand-btn:hover {
+  background: var(--surface-3);
+}
+.brand-back {
+  display: inline-grid;
+  color: var(--text-2);
+  margin-right: -2px;
+}
+.home {
+  min-height: 100vh;
+}
+.home-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 58px;
+  padding: 8px 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.home-body {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 28px 24px 80px;
+}
+.home-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.home-head h1 {
+  font-size: 26px;
+  letter-spacing: -0.01em;
+}
+.home-head p {
+  margin: 4px 0 0;
+}
+.home-filters {
+  display: flex;
+  gap: 8px;
+}
+.home-search {
+  width: 260px;
+}
+.home-sort {
+  width: auto;
+}
+.home-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(250px, 100%), 1fr));
+  gap: 18px;
+  align-items: stretch;
+}
+.home-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 0;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  cursor: pointer;
+  text-align: left;
+  transition: box-shadow 0.15s, border-color 0.15s, transform 0.15s;
+}
+.home-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+.home-thumb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  background: #0d0d0f;
+  color: #6b6b76;
+}
+.home-thumb img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.home-card-menu {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #2a2a31;
+  box-shadow: var(--shadow-sm);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.home-card:hover .home-card-menu,
+.home-card:focus-within .home-card-menu,
+.home-card-menu[aria-expanded='true'] {
+  opacity: 1;
+}
+.home-card-menu:hover:not(:disabled) {
+  background: #fff;
+  color: #000;
+}
+@media (hover: none) {
+  .home-card-menu {
+    opacity: 1;
+  }
+}
+.home-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px 14px;
+  flex: 1;
+}
+.home-card-body p {
+  margin: 0;
+}
+.home-card-title {
+  font-size: 15px;
+  font-weight: 680;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.home-card-title.is-untitled {
+  color: var(--text-2);
+  font-style: italic;
+}
+.home-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 6px;
+}
+.home-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-soft-text);
+  font-size: 11.5px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.home-new {
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 230px;
+  border: 2px dashed var(--border-strong);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-2);
+  font: inherit;
+}
+.home-new:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: none;
+}
+.home-empty {
+  margin-top: 8px;
+}
+.home-none {
+  grid-column: 1 / -1;
+}
+.home-note {
+  margin-top: 28px;
+  text-align: center;
+}
+.home-menu {
+  z-index: 60;
+  width: 210px;
+}
+.home-menu .danger {
+  color: var(--danger);
+}
+@media (max-width: 640px) {
+  .home-top,
+  .home-body {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .home-filters,
+  .home-search {
+    width: 100%;
+  }
+}

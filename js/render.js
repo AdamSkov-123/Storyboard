@@ -78,11 +78,12 @@
 
   /**
    * Draw a frame (image, reframing and arrows) into a W×H box at the context's origin.
-   * opts.full: use the full-resolution image (PDF/review); opts.emptyFill / opts.emptyLabel for frames without an image.
+   * opts.full: use the full-resolution image (PDF/review); opts.emptyFill / opts.emptyLabel for frames without an image;
+   * opts.image: an image entry to use instead of looking it up in the open storyboard (library thumbnails).
    */
   R.drawFrame = function (ctx, frame, W, H, opts) {
     opts = opts || {};
-    const im = frame.imageId ? SB.store.images.get(frame.imageId) : null;
+    const im = opts.image || (frame.imageId ? SB.store.images.get(frame.imageId) : null);
     ctx.save();
     ctx.beginPath();
     ctx.rect(0, 0, W, H);

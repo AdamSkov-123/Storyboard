@@ -1,4 +1,4 @@
-/* Storyboard Maker — app startup, top bar, file menu, drag & drop, keyboard shortcuts. */
+/* Storyboard Maker — app startup, navigation (home ↔ storyboard), file menu, drag & drop, shortcuts. */
 (function (SB) {
   'use strict';
   const U = SB.util;
@@ -10,7 +10,93 @@
   const isImageFile = (f) => (f.type && f.type.startsWith('image/')) || IMAGE_EXT.test(f.name || '');
   const isProjectFile = (f) => /\.storyboard$/i.test(f.name || '');
 
-  let fileHandle = null;
+  let fileHandle = null; // where "Save project" writes for the open storyboard (Chrome/Edge)
+
+  /* ---------- Navigation: #home or #p=<id> ---------- */
+
+  const routeId = () => {
+    const m = /^#p=([A-Za-z0-9_-]+)$/.exec(location.hash);
+    return m ? m[1] : null;
+  };
+
+  /** Open a storyboard by id, or the home page with null. Uses the URL hash so Back works. Resolves when done. */
+  let expectedHash = null;
+  A.go = function (id) {
+    const hash = id ? '#p=' + id : '#home';
+    if (location.hash !== hash) {
+      expectedHash = hash;
+      location.hash = hash;
+    }
+    return route();
+  };
+  function onHashChange() {
+    if (location.hash === expectedHash) {
+      expectedHash = null; // our own navigation; already handled
+      return;
+    }
+    expectedHash = null;
+    route();
+  }
+  A.goHome = () => A.go(null);
+  A.isHome = () => !$('home-view').hidden;
+
+  let routing = Promise.resolve();
+  function route() {
+    routing = routing.then(doRoute).catch((e) => console.error(e));
+    return routing;
+  }
+
+  function closeOverlays() {
+    U.$$('dialog[open]').forEach((d) => d.close());
+    SB.feedback.close();
+    $('file-menu').hidden = true;
+  }
+
+  async function doRoute() {
+    const id = routeId();
+    closeOverlays();
+    if (id && S.hasProject(id)) {
+      if (S.currentId !== id) {
+        fileHandle = null;
+        $('home-view').hidden = true;
+        $('editor-view').hidden = false;
+        $('board').replaceChildren(U.h('div', { class: 'loading', text: 'Opening storyboard…' }));
+        await S.openProject(id);
+        SB.share.adoptSettings(null, S.project.review);
+      }
+      $('home-view').hidden = true;
+      $('editor-view').hidden = false;
+      syncTopbar();
+      SB.board.render();
+      window.scrollTo(0, 0);
+    } else {
+      if (id) U.toast('That storyboard isn’t in this browser.', { type: 'error' });
+      if (S.currentId) {
+        const leaving = S.currentId;
+        const empty = isEmptyProject(S.project);
+        await S.closeProject();
+        if (empty) await S.deleteProject(leaving); // "New storyboard" clicked but nothing added
+      }
+      fileHandle = null;
+      $('editor-view').hidden = true;
+      $('home-view').hidden = false;
+      SB.home.render();
+    }
+    $('drop-title').textContent = A.isHome() ? 'Drop images to start a new storyboard' : 'Drop images to add frames';
+  }
+
+  /* ---------- Storyboards ---------- */
+
+  function isEmptyProject(p) {
+    const c = p.cover || {};
+    return !p.frames.length && !(p.title || '').trim() && !p.review && !c.imageId && ![c.client, c.company, c.date, c.version, c.description].some((v) => (v || '').trim());
+  }
+
+  A.newProject = async function (files) {
+    const id = await S.createProject();
+    await A.go(id);
+    if (files && files.length && S.currentId === id) await A.addImages(files);
+  };
 
   /* ---------- Adding images ---------- */
 
@@ -18,6 +104,10 @@
     if (!files) files = await U.pickFiles({ accept: 'image/*', multiple: true });
     files = Array.from(files || []).filter(isImageFile);
     if (!files.length) return;
+    if (!S.currentId) {
+      await A.newProject(files);
+      return;
+    }
     files.sort((a, b) => U.naturalCompare(a.name || '', b.name || ''));
     const progress = files.length > 2 ? U.toast(`Adding ${files.length} images…`, { duration: 0 }) : null;
     const ids = [];
@@ -56,58 +146,68 @@
   /* ---------- Project files ---------- */
 
   const pickerTypes = [{ description: 'Storyboard project', accept: { 'application/octet-stream': ['.storyboard'] } }];
+  const canPick = () => window.showSaveFilePicker && window.self === window.top;
+
+  /** Write a storyboard to a .storyboard file. handle: an existing file handle to overwrite, if any. */
+  async function writeProjectFile(projectId, name, handle, forcePick) {
+    const blob = await S.buildProjectFile(SB.share.portableSettings(), projectId);
+    if (canPick()) {
+      try {
+        if (!handle || forcePick) handle = await window.showSaveFilePicker({ suggestedName: name, types: pickerTypes });
+        const w = await handle.createWritable();
+        await w.write(blob);
+        await w.close();
+        return { handle, savedTo: handle.name };
+      } catch (e) {
+        if (e.name === 'AbortError') return null;
+        console.warn('File picker unavailable, downloading instead', e);
+      }
+    }
+    U.downloadBlob(blob, name);
+    return { handle: null, savedTo: null };
+  }
 
   A.saveProject = async function (saveAs) {
+    if (!S.currentId) return false;
+    await S.flushSave();
     const name = U.safeFilename(S.project.title, 'storyboard') + '.storyboard';
-    const progress = U.toast('Saving project…', { duration: 0 });
+    const progress = U.toast('Saving project file…', { duration: 0 });
     try {
-      const blob = await S.buildProjectFile(SB.share.portableSettings());
-      let savedTo = null;
-      if (window.showSaveFilePicker && window.self === window.top) {
-        try {
-          if (!fileHandle || saveAs) fileHandle = await window.showSaveFilePicker({ suggestedName: name, types: pickerTypes });
-          const w = await fileHandle.createWritable();
-          await w.write(blob);
-          await w.close();
-          savedTo = fileHandle.name;
-        } catch (e) {
-          if (e.name === 'AbortError') {
-            progress.close();
-            return false;
-          }
-          console.warn('File picker unavailable, downloading instead', e);
-          fileHandle = null;
-          U.downloadBlob(blob, name);
-        }
-      } else {
-        U.downloadBlob(blob, name);
-      }
+      const out = await writeProjectFile(S.currentId, name, fileHandle, saveAs);
       progress.close();
-      U.toast(savedTo ? `Saved to ${savedTo}` : `Downloaded ${name}`);
+      if (!out) return false;
+      fileHandle = out.handle;
+      U.toast(out.savedTo ? `Saved to ${out.savedTo}` : `Downloaded ${name}`);
       return true;
     } catch (e) {
       progress.close();
       console.error(e);
-      U.toast('Could not save the project: ' + e.message, { type: 'error', duration: 8000 });
+      U.toast('Could not save the project file: ' + e.message, { type: 'error', duration: 8000 });
       return false;
     }
   };
 
-  async function confirmReplace(title) {
-    if (!S.project.frames.length && !S.project.title) return true;
-    const r = await U.choose({
-      title,
-      message: 'This replaces the storyboard that is open now. Save it as a project file first if you want to keep it.',
-      buttons: [
-        { id: 'cancel', label: 'Cancel' },
-        { id: 'save', label: 'Save first…' },
-        { id: 'go', label: 'Continue', kind: 'danger' },
-      ],
-    });
-    if (r === 'save') return A.saveProject(false);
-    return r === 'go';
-  }
+  /** Save any storyboard in the library as a file (from the home page). */
+  A.saveProjectFile = async function (id) {
+    if (id === S.currentId) return A.saveProject(true);
+    const r = S.listProjects().find((x) => x.id === id);
+    if (!r) return false;
+    const name = U.safeFilename(r.title, 'storyboard') + '.storyboard';
+    const progress = U.toast('Saving project file…', { duration: 0 });
+    try {
+      const out = await writeProjectFile(id, name, null, true);
+      progress.close();
+      if (out) U.toast(out.savedTo ? `Saved to ${out.savedTo}` : `Downloaded ${name}`);
+      return !!out;
+    } catch (e) {
+      progress.close();
+      console.error(e);
+      U.toast('Could not save the project file: ' + e.message, { type: 'error', duration: 8000 });
+      return false;
+    }
+  };
 
+  /** Add a .storyboard file to your storyboards and open it. */
   A.openProject = async function (file) {
     let handle = null;
     if (!file) {
@@ -124,34 +224,50 @@
       }
     }
     if (!file) return;
-    if (!(await confirmReplace('Open this project?'))) return;
-    const progress = U.toast('Opening project…', { duration: 0 });
+    const progress = U.toast('Opening project file…', { duration: 0 });
+    let data;
     try {
-      const data = await S.readProjectFile(file);
-      await S.loadProject(data);
-      fileHandle = handle;
-      progress.close();
-      U.toast(`Opened “${S.project.title || file.name}”`);
-      if (SB.share.adoptSettings(data.settings, S.project.review)) {
-        U.toast('Client link settings came with this project, so this browser is ready to create client links.', { duration: 7000 });
-      }
+      data = await S.readProjectFile(file);
     } catch (e) {
       progress.close();
       console.error(e);
       U.toast(e.message || 'Could not open this file.', { type: 'error', duration: 8000 });
+      return;
     }
-  };
-
-  A.newProject = async function () {
-    if (!(await confirmReplace('Start a new storyboard?'))) return;
-    await S.resetProject();
-    fileHandle = null;
-    U.toast('New storyboard started');
+    progress.close();
+    let asCopy = false;
+    if (S.hasProject(data.project.uid)) {
+      const existing = S.listProjects().find((r) => r.id === data.project.uid);
+      const r = await U.choose({
+        title: 'You already have this storyboard',
+        message: `“${existing.title || 'Untitled storyboard'}” (edited ${U.timeAgo(existing.updatedAt)}) is already in your storyboards. Replace it with the version in this file, or keep both?`,
+        buttons: [
+          { id: 'cancel', label: 'Cancel' },
+          { id: 'copy', label: 'Keep both' },
+          { id: 'replace', label: 'Replace', kind: 'primary' },
+        ],
+      });
+      if (!r || r === 'cancel') return;
+      asCopy = r === 'copy';
+    }
+    try {
+      const id = await S.importProject(data, asCopy);
+      if (SB.share.adoptSettings(data.settings, S.project.review)) {
+        U.toast('Client link settings came with this project, so this browser is ready to create client links.', { duration: 7000 });
+      }
+      await A.go(id);
+      fileHandle = asCopy ? null : handle;
+      U.toast(`Opened “${S.project.title || file.name}”`);
+    } catch (e) {
+      console.error(e);
+      U.toast('Could not open this project: ' + e.message, { type: 'error', duration: 8000 });
+    }
   };
 
   /* ---------- Top bar ---------- */
 
   function syncTopbar() {
+    if (!S.currentId) return;
     const p = S.project;
     const title = $('project-title');
     if (document.activeElement !== title) title.value = p.title;
@@ -180,6 +296,7 @@
       if (e.key === 'Enter' || e.key === 'Escape') title.blur();
     });
 
+    $('home-btn').addEventListener('click', A.goHome);
     $('undo-btn').addEventListener('click', () => S.undo());
     $('redo-btn').addEventListener('click', () => S.redo());
     $('add-images-btn').addEventListener('click', () => A.addImages());
@@ -226,7 +343,8 @@
       if (!item) return;
       close();
       const act = item.dataset.file;
-      if (act === 'new') A.newProject();
+      if (act === 'home') A.goHome();
+      else if (act === 'new') A.newProject();
       else if (act === 'open') A.openProject();
       else if (act === 'save') A.saveProject(false);
       else if (act === 'saveas') A.saveProject(true);
@@ -286,15 +404,15 @@
       const modalOpen = !!document.querySelector('dialog[open]');
       if (key === 's') {
         e.preventDefault();
-        A.saveProject(e.shiftKey);
+        if (S.currentId) A.saveProject(e.shiftKey);
       } else if (key === 'o' && !modalOpen) {
         e.preventDefault();
         A.openProject();
-      } else if (key === 'z' && !U.isTyping()) {
+      } else if (key === 'z' && !U.isTyping() && S.currentId) {
         e.preventDefault();
         if (e.shiftKey) S.redo();
         else S.undo();
-      } else if (key === 'y' && !U.isTyping()) {
+      } else if (key === 'y' && !U.isTyping() && S.currentId) {
         e.preventDefault();
         S.redo();
       }
@@ -314,23 +432,23 @@
     SB.fieldsManager.init();
     SB.pdf.init();
     SB.share.init();
-    SB.share.adoptSettings(null, S.project.review);
     SB.feedback.init();
+    SB.home.init();
     initDragDrop();
     initKeyboard();
     S.subscribe(syncTopbar);
-    syncTopbar();
     showSaveState(S.saveState);
-    SB.board.render();
+    window.addEventListener('hashchange', onHashChange);
+    await route();
     if (!S.persistent) {
-      U.toast('Autosave isn’t available in this browser, so use File → Save project to keep your work.', { type: 'error', duration: 10000 });
+      U.toast('This browser can’t store storyboards, so use File → Save project to keep your work.', { type: 'error', duration: 10000 });
     }
     const flush = () => S.flushSave();
     window.addEventListener('pagehide', flush);
     document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && flush());
     window.addEventListener('beforeunload', (e) => {
       flush();
-      if (!S.persistent && S.project.frames.length) {
+      if (!S.persistent && S.listProjects().length) {
         e.preventDefault();
         e.returnValue = '';
       }

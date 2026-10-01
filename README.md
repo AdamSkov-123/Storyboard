@@ -22,13 +22,16 @@ Nothing to install and no build step. It's plain HTML, CSS and JavaScript.
 - A live preview shows exactly what each page will look like.
 - The layout adapts to your aspect ratio and amount of text. It puts text under the images or beside them, whichever leaves the images biggest. Unusually long text is shrunk to fit.
 
-**Saving**
-- Work **autosaves in your browser** as you go.
-- *File → Save project* writes a `.storyboard` file containing your images, text, framing and arrows. Use it to back up, move to another computer, or hand off to a colleague. Open it with *File → Open project* or by dropping it onto the page.
+**Your storyboards**
+- The app opens on a **home page** listing every storyboard saved in this browser. Each shows a thumbnail, its title, client, number of frames, when it was last edited, and whether it has a client link. You can search by title or client and sort by last edited, newest or name.
+- Click **New storyboard** to start one, or drop images onto the home page to start a storyboard with them. Click a card to open it, and click the logo (*‹ Storyboards*) or use the browser's Back button to return.
+- Each card's **⋯** menu has *Duplicate*, *Save project file* and *Delete*. Deleting a storyboard that has a client link also turns that link off. A duplicate starts without a client link.
+- Everything **autosaves in your browser** as you work. A new storyboard you leave without adding anything is discarded.
+- *File → Save project* (or ⋯ → *Save project file* on the home page) writes a `.storyboard` file containing your images, text, framing and arrows. Use it to back up, move to another computer, or hand off to a colleague. *Open project file* (or dropping the file onto the page) adds it to your storyboards. If you already have that storyboard, you can replace it or keep both.
 
 **Client review links** (optional, see the setup below)
 - *Client link* uploads a copy of the storyboard and gives you a link to send. Clients open it in any browser with **no account**. They type their name once and the browser remembers it.
-- Clients choose how to **view** the storyboard: **one frame at a time** (a slideshow with *Previous*/*Next*, arrow keys, and a filmstrip of numbered thumbnails showing which frames have comments) or **1, 2, 3 or 4 frames per row**. Large frames show their text beside the image. The choice is remembered on their device.
+- Clients choose how to **view** the storyboard: **one frame at a time** (a slideshow with *Previous*/*Next*, arrow keys, and a filmstrip of numbered thumbnails showing which frames have comments) or **1, 2, 3 or 4 frames per row**. Links open one frame at a time to start with; after that, each client's choice is remembered on their device. Large frames show their text beside the image.
 - Clients **click anywhere** to pin a comment: on an image, on a piece of text, on the cover or the page. They can **suggest edits** to any text, including filling in empty fields. They can **edit or delete their own comments**, and anyone can **reply**, so feedback becomes a conversation as in frame.io. Everyone with the link sees all comments, live.
 - In the app, the **Feedback** panel collects everything, grouped by frame with thumbnails showing where each pin is. Suggested edits appear as a tracked change (~~removed~~ / **added**) with an **Accept edit** button that applies the text to your storyboard. You can reply as your team (with a *Team* badge), resolve and reopen threads, and copy a plain-text summary for email or Slack. Board cards show a badge with each frame's open comments.
 - After making changes, click **Update link** and clients see the new version. Comments stay attached to their frames even if you reorder them.
@@ -48,7 +51,7 @@ This also hosts the page your clients open, so you need it for client links.
 2. Under **Build and deployment**, set **Source** to **Deploy from a branch**, choose the branch with this code (for example `main`) and the **/ (root)** folder, then **Save**.
 3. After a minute or two the app is at **https://adamskov-123.github.io/Storyboard/** and the client page at **https://adamskov-123.github.io/Storyboard/review.html**.
 
-> Storyboards autosave per browser *and* per address, so work saved while using the downloaded copy doesn't appear in the hosted copy, and vice versa. Use *File → Save project* and *Open project* to move a storyboard between them.
+> Storyboards are saved per browser *and* per address, so storyboards made in the downloaded copy don't appear in the hosted copy, and vice versa. Use *Save project file* and *Open project file* to move one between them.
 
 ## Setting up client review links (one time, about 10 minutes)
 
@@ -91,7 +94,7 @@ Then click **Create client link** and send the link to your client.
 ## Notes and limitations
 - iPhone **HEIC** photos only open in Safari. In other browsers, export them as JPG first.
 - PDFs use the built-in Helvetica font, which covers Western European languages. Other characters (for example → or emoji) are replaced with close equivalents such as `->`.
-- Autosave uses your browser's storage. Clearing site data removes it, so save a project file for anything important.
+- Storyboards are kept in your browser's storage. Clearing site data removes them, so save a project file for anything important.
 
 ## For developers
 
@@ -100,7 +103,8 @@ index.html          the editor app
 review.html         the client review page
 css/styles.css      styles for both pages (light and dark)
 js/util.js          helpers, icons, toasts, dialogs, word diff
-js/store.js         project state, undo history, IndexedDB autosave, .storyboard files
+js/store.js         storyboard library (IndexedDB), the open storyboard's state and undo history, .storyboard files
+js/home.js          home page: all storyboards, new/duplicate/delete/import
 js/render.js        frame rendering: reframing and arrows (board, editor, PDF, uploads)
 js/board.js         board view and drag-to-reorder
 js/editor.js        frame editor (reframe, arrows, fields)

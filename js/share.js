@@ -246,6 +246,13 @@
     }
   };
 
+  /** Turn off a client link: deletes the online copy and its comments. Works for any storyboard's link. */
+  SH.deleteOnline = async function (review) {
+    const conn = await C.connect(SH.projectCfg(review));
+    await C.ensureOwner(conn, review.id, review.key);
+    await C.deleteReview(conn, review.id);
+  };
+
   SH.stopSharing = async function () {
     const review = S.project.review;
     if (!review) return;
@@ -259,9 +266,7 @@
     busy = true;
     setProgress('Deleting the online copy…');
     try {
-      const conn = await C.connect(SH.projectCfg(review));
-      await C.ensureOwner(conn, review.id, review.key);
-      await C.deleteReview(conn, review.id);
+      await SH.deleteOnline(review);
     } catch (e) {
       console.error(e);
       busy = false;

@@ -21,7 +21,8 @@
   let docSig = '';
   const VIEWS = ['single', 'cols1', 'cols2', 'cols3', 'cols4'];
   let view = U.storage.get('sb-review-view', '');
-  if (!VIEWS.includes(view)) view = window.innerWidth < 760 ? 'cols1' : 'cols2';
+  // First visit starts one frame at a time; after that, whatever the client last chose on this device.
+  if (!VIEWS.includes(view)) view = 'single';
   let slideId = null; // 'cover' or a frame id, in "one at a time" view
 
   /* ---------- Startup ---------- */
